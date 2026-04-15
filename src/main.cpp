@@ -69,7 +69,7 @@ int main(int argc, char* argv[])
     drone::GroundTruthMap groundTruth(parsedMap);
 
     // -----------------------------------------------------------------------
-    // 5. Simulation loop placeholder — to be filled in Phase 4
+    // 5. Drone + algorithm placeholder — to be filled in Phase 4
     // -----------------------------------------------------------------------
     std::cout << "Input files loaded successfully.\n";
     std::cout << "  Lidar FOV:      "
@@ -88,7 +88,7 @@ int main(int argc, char* argv[])
               << missionConfig.startY.numerical_value_in(si::centi<si::metre>)      << ", "
               << missionConfig.startHeight.numerical_value_in(si::centi<si::metre>) << ") cm\n";
 
-    // TODO Phase 4: initialise mocks, drone, and run simulation loop
+    // TODO Phase 4: create SimulationState + mocks + Drone, then call algo.Run()
 
     return 0;
 }

@@ -5,6 +5,9 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Generate compile_commands.json so VS Code IntelliSense finds mp-units headers
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 find_package(mp-units REQUIRED)
 
 # Gather all .cpp sources under src/ (except main.cpp added separately)

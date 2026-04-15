@@ -32,10 +32,10 @@ struct ScanCmd {
 // Request current position from the position sensor
 struct GetLocationCmd {};
 
-// Signal that mapping is complete; ends the simulation loop
+// Signal that mapping is complete; the algorithm's Run() method should return after issuing this
 struct FinishedCmd {};
 
-// All commands the drone algorithm can issue in one turn
+// All commands the mapping algorithm can issue
 using DroneCommand = std::variant<
     RotateCmd,
     AdvanceCmd,
