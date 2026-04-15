@@ -32,7 +32,7 @@ Drone Project/
 │   ├── types/
 │   │   ├── Units.h           # mp-unit aliases: Meters, Degrees, Position3D, Orientation
 │   │   ├── MapValue.h        # enum: Empty=0, Occupied=1, NotMapped=-1, BeyondBounds=-2
-│   │   └── DroneCommand.h    # std::variant of all command types
+│   │   └── DroneCommand.h    # std::variant of all command types (for use by the mapping algorithm)
 │   ├── interfaces/
 │   │   ├── ILidarSensor.h
 │   │   ├── IPositionSensor.h
@@ -47,7 +47,7 @@ Drone Project/
 │   ├── drone/
 │   │   ├── DroneConfig.h
 │   │   ├── MissionConfig.h
-│   │   ├── Drone.h              # autonomous agent
+│   │   ├── Drone.h              # hardware abstraction layer — imperative robot API
 │   │   └── BuildingMapImpl.h    # Drone's own IBuildingMap implementation
 │   ├── io/
 │   │   ├── ConfigParser.h
@@ -99,10 +99,12 @@ All three mocks hold a `shared_ptr<SimulationState>` which contains the drone's 
 `Position3D` and `Orientation`. Movement driver writes to it; position sensor reads from it;
 lidar sensor reads it to know where to cast rays from.
 
-### Command Pattern (polling)
-`drone.NextCommand()` returns a `std::variant<RotateCmd, AdvanceCmd, ElevateCmd,
-ScanCmd, GetLocationCmd, FinishedCmd>`. The `main` simulation loop dispatches each
-command. The Drone never directly calls mocks — it emits intents.
+### Drone as Hardware Abstraction Layer
+`Drone` is a thin, imperative wrapper over the four interfaces — no algorithm logic.
+It exposes `Rotate()`, `Advance()`, `Elevate()`, `Scan()`, `GetLocation()`,
+`RecordCell()`, and `QueryCell()`. Each method delegates to exactly one interface.
+The mapping algorithm lives in a separate class that holds a `Drone&` and calls it.
+`DroneCommand.h` is available for the algorithm to model its internal state machine.
 
 ### Sparse Map Storage
 `std::unordered_map<std::tuple<int,int,int>, MapValue>` with integer grid indices.
@@ -160,7 +162,7 @@ END
 
 ## Implementation Phases (do in order, one by one)
 
-### Phase 1 — Foundation (compile skeleton)
+### Phase 1 — Foundation (compile skeleton) ✅ COMPLETE
 1. `CMakeLists.txt` — fetch mp-unit via `FetchContent`, set **C++20**, add flags `-Wall -Wextra -Werror -pedantic`. Also add a `Makefile` wrapper that calls cmake for Linux compatibility.
 2. `include/types/Units.h` — mp-unit aliases (`Meters`, `Degrees`, `Position3D`, `Orientation`)
 3. `include/types/MapValue.h` — enum class
@@ -174,7 +176,7 @@ END
 
 **Milestone:** Compiles; reads all three files; prints any config errors.
 
-### Phase 2 — Mock Sensors
+### Phase 2 — Mock Sensors ✅ COMPLETE
 11. `SimulationState` — simple struct, `shared_ptr` shared by all mocks
 12. `MockPositionSensor` — returns `state->current_position`
 13. `MockMovementDriver` — updates state position/orientation; enforces max-per-request; checks GroundTruthMap for collision (→ failure notice + finish)
@@ -187,26 +189,37 @@ END
 
 **Milestone:** Unit test Lidar on one-wall room; verify correct distance returned.
 
-### Phase 3 — Building Map (Drone's own map)
+### Phase 3 — Building Map (Drone's own map) ✅ COMPLETE
 15. `BuildingMapImpl` — sparse map with mission-boundary polygon check; coordinate-to-index using output resolution; `Get`/`Set` API
 
 **Milestone:** Unit test bounds checking and round-trip Set/Get.
 
 ### Phase 4 — Simulation Loop Wiring
-16. Wire `main.cpp`: construct all objects, inject interfaces into Drone stub
-17. Main loop: call `drone.NextCommand()` → dispatch to mocks → pass results back to drone
-18. Handle `Finished` → write `output_map.txt` (to same path as input files) → compute and print score
+16. Wire `main.cpp`: construct `SimulationState`, all four mocks, `BuildingMapImpl`,
+    and `Drone`. Set `state->position` from `missionConfig.startX/Y/Height`.
+17. Instantiate the mapping algorithm (Phase 5 class) with `Drone&`. Call `algo.Run()`.
+    On `CollisionDetected` the algorithm must stop and print a failure notice.
+18. After `algo.Run()` returns: write `output_map.txt` via `WriteMapFile()`,
+    compute and print score.
 
-**Milestone:** Stub drone that just calls `GetLocation` then `Finished` runs without crash.
+**Milestone:** Algorithm stub that immediately returns runs without crash;
+`output_map.txt` is created (empty map is fine at this stage).
 
-### Phase 5 — Drone Algorithm
-19. Scan-and-update: call `Scan()`, parse matrix, compute world hit positions, update `BuildingMapImpl`
+### Phase 5 — Mapping Algorithm
+Create a class (e.g. `MappingAlgorithm`) that takes `Drone&` in its constructor
+and exposes a single `Run()` method. It calls the Drone API directly — no main-loop
+dispatch, no callbacks needed.
+
+19. Scan-and-update: call `drone.Scan()`, parse matrix, compute world hit positions,
+    call `drone.RecordCell()` for each hit
 20. BFS frontier: `std::queue<GridCell3D>` of cells to visit; `visited` set
-21. XY-plane A* path planning on known-empty cells in `BuildingMapImpl`
-22. Movement execution: split large moves into max-size chunks; rotate to face target first
-23. Height exploration: after XY frontier exhausted at current height, `Elevate` to next unvisited height slice
+21. XY-plane A* path planning on known-empty cells (query via `drone.QueryCell()`)
+22. Movement execution: split large moves into max-size chunks; rotate to face target
+    first; check return value of every `drone.Advance()` / `drone.Elevate()` call
+23. Height exploration: after XY frontier exhausted at current height, `drone.Elevate()`
+    to next unvisited height slice
 24. Quick forward scan after each advance step (collision re-check)
-25. `Finished` when BFS frontier is empty and all height slices covered
+25. Return from `Run()` when BFS frontier is empty and all height slices covered
 
 **Milestone:** Drone maps a simple rectangular room; score > 70%.
 
@@ -246,7 +259,8 @@ END
 - `src/io/ConfigParser.cpp` + `src/io/MapIO.cpp`
 - `src/simulation/SimulationState.h` + `MockLidarSensor.cpp`
 - `src/drone/BuildingMapImpl.cpp`
-- `src/drone/Drone.cpp` (algorithm core)
+- `src/drone/Drone.cpp` (hardware abstraction — thin delegating wrapper, already done)
+- `src/drone/MappingAlgorithm.cpp` (algorithm core — to be implemented in Phase 5)
 - `src/main.cpp` (simulation loop)
 - `src/scoring/Scorer.cpp`
 
