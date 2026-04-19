@@ -1,12 +1,14 @@
-BUILD_DIR := build/build/Release
+BUILD_DIR := build
 
 .PHONY: all clean rebuild
 
 all:
-	cmake --preset conan-release
+	cmake -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Release
 	cmake --build $(BUILD_DIR)
 
 clean:
 	cmake --build $(BUILD_DIR) --target clean
 
-rebuild: clean all
+rebuild:
+	rm -rf $(BUILD_DIR)
+	$(MAKE) all

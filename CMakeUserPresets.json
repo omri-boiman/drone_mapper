@@ -1,9 +1,19 @@
 {
     "version": 4,
-    "vendor": {
-        "conan": {}
-    },
-    "include": [
-        "build/build/Release/generators/CMakePresets.json"
+    "configurePresets": [
+        {
+            "name": "release",
+            "displayName": "Release",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "release",
+            "configurePreset": "release"
+        }
     ]
 }
