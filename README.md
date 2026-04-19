@@ -5,17 +5,16 @@ The drone navigates an unknown building, fires a simulated LiDAR, and builds a v
 
 ---
 
-## Project structure
+## Project structure - After Omri's First steps.
 
 ```
 drone_mapper/
-├── Dockerfile                   # Container image definition
 ├── .devcontainer/
 │   └── devcontainer.json        # VS Code Dev Container config
-├── CMakeLists.txt
-├── CMakeUserPresets.json        # Wires cmake --preset to Conan output
+├── CMakeLists.txt               # Builds project; bootstraps Conan + mp-units automatically
+├── CMakeUserPresets.json        # Defines the "release" configure preset
 ├── conanfile.txt                # Dependencies (mp-units 2.5.0)
-├── Makefile                     # Convenience wrapper
+├── Makefile                     # Convenience wrapper around cmake
 ├── include/
 │   ├── drone/                   # BuildingMapImpl
 │   ├── interfaces/              # IBuildingMap, ILidarSensor, …
@@ -47,99 +46,40 @@ Everything runs inside the container.
 
 ## Opening the project in the Dev Container
 
-Open the project folder in VS Code.
-
-Ensure you have the following two files configured in your root directory:
-
-### Dockerfile
-
-```Dockerfile
-FROM ubuntu:24.04
-
-# Prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install only GCC 13 and necessary tools
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc-13 \
-    g++-13 \
-    cmake \
-    git \
-    make \
-    python3-pip \
-    python3-venv \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set GCC 13 as the absolute system default
-RUN update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 100 \
-    --slave /usr/bin/g++ g++ /usr/bin/g++-13
-
-# Install Conan 2.x
-RUN pip3 install --break-system-packages conan
-
-WORKDIR /workspaces/drone_mapper
-
-```
-### .devcontainer/devcontainer.json
-```JSON
-{
-    "name": "Drone Mapper GCC 13",
-    "build": { "dockerfile": "../Dockerfile" },
-    "customizations": {
-        "vscode": {
-            "extensions": [
-                "ms-vscode.cpptools",
-                "ms-vscode.cmake-tools"
-            ]
-        }
-    },
-    "remoteUser": "root",
-    "workspaceFolder": "/workspaces/drone_mapper"
-}
-```
-When prompted by the pop-up in the bottom-right, click Reopen in Container.
-
-Alternatively, press F1, type "Dev Containers: Reopen in Container", and press Enter.
-
-Once the container starts, verify the compiler by running g++ --version in the terminal. It should report version 13.x.x.
-
+1. From the course Moodle, download the example container ZIP file.
+2. Copy only the `.devcontainer` folder from it into the project root.
+3. Open the project folder in VS Code.
+4. When prompted by the pop-up in the bottom-right, click **Reopen in Container**.  
+   Alternatively: press `F1` → type `Dev Containers: Reopen in Container` → press Enter.
+5. Clone this project inside the container.
 
 ---
 
 ## Building
 
-### Step 1 — Install dependencies with Conan
-
-Run this whenever `conanfile.txt` changes (or on a fresh container):
-
-```bash
-conan install . --build=missing -s build_type=Release
-```
-
-Conan downloads `mp-units/2.5.0` (and its transitive deps), compiles anything that has no pre-built binary, and writes CMake toolchain files into `build/`.
-
-### Step 2 — Configure CMake
-
-```bash
-cmake --preset conan-release
-```
-
-This reads the toolchain Conan generated and configures the project.
-
-### Step 3 — Compile
-
-```bash
-cmake --build build/build/Release
-```
-
-**Or use the Makefile shortcut (steps 2 + 3 together):**
+No manual setup is needed. On the very first build CMake automatically installs Conan and fetches `mp-units/2.5.0`.
 
 ```bash
 make
 ```
 
-> `make` will not re-run `conan install`. Always run Step 1 manually when dependencies change.
+Or equivalently:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
+
+---
+
+## When to re-run make
+
+| What changed | Command needed |
+|---|---|
+| Any `.cpp` or `.h` source file | `make` — incremental, only recompiles what changed |
+| `CMakeLists.txt` | `make` — cmake reconfigures automatically |
+| `conanfile.txt` (dependencies) | `make rebuild` — must re-run Conan to fetch new packages |
+| Fresh container / first clone | `make` — everything is bootstrapped automatically |
 
 ---
 
@@ -150,13 +90,13 @@ make
 Runs without any input files. Prints PASS / FAIL for each check:
 
 ```bash
-./build/build/Release/sensor_test
+./build/sensor_test
 ```
 
 Expected output ends with:
 ```
 ================================
-  Passed: 22
+  Passed: 37
   Failed: 0
 ================================
 ```
@@ -164,7 +104,7 @@ Expected output ends with:
 ### Main simulator
 
 ```bash
-./build/build/Release/drone_mapper <path-to-input-folder>
+./build/drone_mapper <path-to-input-folder>
 ```
 
 The input folder must contain:
@@ -187,16 +127,16 @@ make rebuild
 Or manually:
 
 ```bash
-cmake --build build/build/Release --target clean
-cmake --preset conan-release
-cmake --build build/build/Release
+rm -rf build
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build
 ```
 
 ---
 
 ## Compiler flags
 
-All targets are built with `-Wall -Wextra -Werror -pedantic`.  
+All targets are built with `g++ -std=c++20 -Wall -Wextra -Werror -pedantic`.  
 The build will fail on any warning — fix warnings before committing.
 
 ---
@@ -207,4 +147,4 @@ The build will fail on any warning — fix warnings before committing.
 |---------|---------|----------|
 | [mp-units](https://mpusz.github.io/mp-units/) | 2.5.0 | Strong physical units (`Centi`, `Degrees`, …) throughout all APIs |
 
-Managed by Conan; no manual installation needed.
+Fetched automatically by Conan on first build — no manual installation needed.

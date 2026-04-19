@@ -44,8 +44,12 @@ if(NOT EXISTS "${_conan_toolchain}")
             message(FATAL_ERROR "pip install conan failed (exit ${_pip_exit})")
         endif()
 
+        # pip may install to ~/.local/bin – search that explicitly
         unset(CONAN CACHE)
-        find_program(CONAN conan REQUIRED)
+        find_program(CONAN conan
+            PATHS "$ENV{HOME}/.local/bin" /usr/local/bin
+            REQUIRED
+        )
     endif()
 
     # Create the default Conan profile if it does not exist yet
