@@ -1,0 +1,13 @@
+min_pass_width_cm = 60
+min_pass_length_cm = 60
+min_pass_height_cm = 120
+lidar_fov_deg = 90
+lidar_min_range_cm = 20
+lidar_max_range_cm = 1000
+lidar_res_at_dist1_cm = 5
+lidar_dist1_cm = 100
+lidar_res_at_dist2_cm = 20
+lidar_dist2_cm = 800
+max_rotate_deg = 45
+max_advance_cm = 50
+max_elevate_cm = 30

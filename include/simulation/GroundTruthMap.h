@@ -25,8 +25,14 @@ public:
     // Build from an already-parsed map file
     explicit GroundTruthMap(const ParsedMap& parsed);
 
-    // Returns true if the position is occupied in the ground-truth map
+    // Returns true if the position is occupied in the ground-truth map (1 cm precision).
+    // Used by MockMovementDriver for exact collision detection.
     bool IsOccupied(Centi x, Centi y, Centi height) const;
+
+    // Returns true if any GT-occupied cell lies within 5 cm of the given position
+    // (snaps to nearest 10 cm grid point — matching the GT's native resolution).
+    // Used by MockLidarSensor so diagonal rays detect walls between grid points.
+    bool IsOccupiedCoarse(Centi x, Centi y, Centi height) const;
 
     // Returns the raw MapValue at the position (BeyondBounds / NotMapped / etc.)
     MapValue Query(Centi x, Centi y, Centi height) const;
@@ -56,6 +62,15 @@ private:
         return { static_cast<int>(std::round(xCm)),
                  static_cast<int>(std::round(yCm)),
                  static_cast<int>(std::round(hCm)) };
+    }
+
+    // Snap to nearest 10 cm — matches the GT grid spacing so diagonal rays
+    // are not missed when they pass between sparse grid points.
+    static Key MakeKeyCoarse(double xCm, double yCm, double hCm) {
+        auto snap = [](double v) {
+            return static_cast<int>(std::round(v / 10.0) * 10.0);
+        };
+        return { snap(xCm), snap(yCm), snap(hCm) };
     }
 
     std::unordered_map<Key, MapValue, KeyHash> m_cells;

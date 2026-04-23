@@ -144,9 +144,10 @@ ParsePolygon(const std::string& raw, const std::string& file,
     while (std::getline(ss, token, ')')) {
         ++idx;
         if (token.empty()) continue;
-        // Strip leading '('
-        if (!token.empty() && token.front() == '(') token = token.substr(1);
+        // Strip leading ',' then '(' (order matters: tokens after the first
+        // arrive as ",(x,y" so we must peel the comma before the paren)
         if (!token.empty() && token.front() == ',') token = token.substr(1);
+        if (!token.empty() && token.front() == '(') token = token.substr(1);
 
         const auto comma = token.find(',');
         if (comma == std::string::npos) {
