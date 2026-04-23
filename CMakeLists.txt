@@ -119,3 +119,15 @@ add_executable(sensor_test
 target_include_directories(sensor_test PRIVATE include)
 target_compile_options(sensor_test PRIVATE -Wall -Wextra -Werror -pedantic)
 target_link_libraries(sensor_test PRIVATE mp-units::mp-units)
+
+# ---------------------------------------------------------------------------
+# mapping_test – smoke test for Phase 5 MappingAlgorithm (no GTest required)
+# ---------------------------------------------------------------------------
+add_executable(mapping_test
+    src/test_mapping.cpp
+    ${DRONE_SOURCES}
+)
+
+target_include_directories(mapping_test PRIVATE include)
+target_compile_options(mapping_test PRIVATE -Wall -Wextra -Werror -pedantic)
+target_link_libraries(mapping_test PRIVATE mp-units::mp-units)
