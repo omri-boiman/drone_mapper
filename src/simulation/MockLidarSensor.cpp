@@ -30,7 +30,7 @@ double MockLidarSensor::CastRay(double originX, double originY, double originH,
         const double cy = originY + t * dy;
         const double ch = originH + t * dz;
 
-        if (m_groundTruth.IsOccupied(
+        if (m_groundTruth.IsOccupiedCoarse(
                 cx * si::centi<si::metre>,
                 cy * si::centi<si::metre>,
                 ch * si::centi<si::metre>)) {

@@ -1,0 +1,4 @@
+mission_config.txt: bad polygon vertex #2 '(800,0' — skipped
+mission_config.txt: bad polygon vertex #3 '(800,600' — skipped
+mission_config.txt: bad polygon vertex #4 '(0,600' — skipped
+mission_config.txt: boundary_polygon has fewer than 3 vertices — mapping boundaries will be unreliable
