@@ -1,11 +1,20 @@
 #include <filesystem>
 #include <iostream>
+#include <memory>
 
 #include "types/Units.h"
 #include "io/ErrorLogger.h"
 #include "io/ConfigParser.h"
 #include "io/MapIO.h"
 #include "simulation/GroundTruthMap.h"
+#include "simulation/SimulationState.h"
+#include "simulation/MockLidarSensor.h"
+#include "simulation/MockPositionSensor.h"
+#include "simulation/MockMovementDriver.h"
+#include "drone/BuildingMapImpl.h"
+#include "drone/Drone.h"
+#include "drone/MappingAlgorithm.h"
+#include "scoring/Scorer.h"
 
 using namespace mp_units;
 using namespace mp_units::si::unit_symbols;
@@ -69,26 +78,70 @@ int main(int argc, char* argv[])
     drone::GroundTruthMap groundTruth(parsedMap);
 
     // -----------------------------------------------------------------------
-    // 5. Drone + algorithm placeholder — to be filled in Phase 4
+    // 5. Wire up the simulation: create SimulationState + all mocks
     // -----------------------------------------------------------------------
-    std::cout << "Input files loaded successfully.\n";
-    std::cout << "  Lidar FOV:      "
-              << droneConfig.lidarFov.numerical_value_in(si::degree) << " deg\n";
-    std::cout << "  Lidar range:    "
-              << droneConfig.lidarMinRange.numerical_value_in(si::centi<si::metre>)
-              << " - "
-              << droneConfig.lidarMaxRange.numerical_value_in(si::centi<si::metre>) << " cm\n";
-    std::cout << "  Mission height: "
-              << missionConfig.minHeight.numerical_value_in(si::centi<si::metre>)
-              << " - "
-              << missionConfig.maxHeight.numerical_value_in(si::centi<si::metre>) << " cm\n";
-    std::cout << "  Map cells:      " << parsedMap.cells.size() << "\n";
-    std::cout << "  Start pos:      ("
-              << missionConfig.startX.numerical_value_in(si::centi<si::metre>)      << ", "
-              << missionConfig.startY.numerical_value_in(si::centi<si::metre>)      << ", "
-              << missionConfig.startHeight.numerical_value_in(si::centi<si::metre>) << ") cm\n";
+    auto simulationState = std::make_shared<drone::SimulationState>();
 
-    // TODO Phase 4: create SimulationState + mocks + Drone, then call algo.Run()
+    // Initialize drone position from mission config
+    simulationState->position = {
+        missionConfig.startX,
+        missionConfig.startY,
+        missionConfig.startHeight
+    };
+    simulationState->orientation = {
+        0.0 * si::degree,  // initially facing +X (0 degrees)
+        0.0 * si::degree   // horizontal pitch (no elevation)
+    };
+
+    // Create the three mock sensors
+    drone::MockLidarSensor      lidar(simulationState, droneConfig, groundTruth);
+    drone::MockPositionSensor   position(simulationState);
+    drone::MockMovementDriver   driver(simulationState, droneConfig, groundTruth);
+
+    // Create the drone's own building map
+    drone::BuildingMapImpl       map(missionConfig);
+
+    // Create the Drone (hardware abstraction layer)
+    drone::Drone                drone(lidar, position, driver, map);
+
+    // -----------------------------------------------------------------------
+    // 6. Run the mapping algorithm
+    // -----------------------------------------------------------------------
+    std::cout << "\nStarting mapping algorithm...\n";
+    drone::MappingAlgorithm algo(drone, &droneConfig, &missionConfig);
+
+    try {
+        algo.Run();
+        std::cout << "Mapping algorithm completed successfully.\n";
+    } catch (const std::exception& e) {
+        std::cerr << "Mapping algorithm failed with exception: " << e.what() << "\n";
+        return 1;
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. Write the output map
+    // -----------------------------------------------------------------------
+    const std::vector<drone::MapCell> discoveredCells = map.GetAllCells();
+    std::cout << "Cells recorded: " << discoveredCells.size() << "\n";
+    const drone::MapBounds outputBounds = parsedMap.bounds;
+
+    const std::filesystem::path outputPath = ioPath / "map_output.txt";
+    if (!drone::WriteMapFile(outputPath, outputBounds, discoveredCells)) {
+        std::cerr << "Failed to write output map to " << outputPath << "\n";
+        return 1;
+    }
+    std::cout << "Output map written to " << outputPath << "\n";
+
+    // -----------------------------------------------------------------------
+    // 8. Compute and print score
+    // -----------------------------------------------------------------------
+    const double score = drone::Scorer::ComputeScore(map, discoveredCells, parsedMap, outputBounds);
+    std::cout << "\nScore: " << score << "%\n";
+
+    // -----------------------------------------------------------------------
+    // 9. Done
+    // -----------------------------------------------------------------------
+    std::cout << "Simulation completed.\n";
 
     return 0;
 }

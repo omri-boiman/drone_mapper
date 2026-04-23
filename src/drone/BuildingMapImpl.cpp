@@ -1,4 +1,5 @@
 #include "drone/BuildingMapImpl.h"
+#include "io/MapIO.h"
 
 #include <cmath>
 
@@ -80,6 +81,25 @@ void BuildingMapImpl::Set(Centi x, Centi y, Centi height, MapValue value)
     m_cells[MakeKey(x.numerical_value_in(si::centi<si::metre>),
                     y.numerical_value_in(si::centi<si::metre>),
                     height.numerical_value_in(si::centi<si::metre>))] = value;
+}
+
+// ---------------------------------------------------------------------------
+
+std::vector<MapCell> BuildingMapImpl::GetAllCells() const
+{
+    std::vector<MapCell> result;
+    result.reserve(m_cells.size());
+
+    for (const auto& [key, value] : m_cells) {
+        MapCell cell;
+        cell.x      = (static_cast<double>(key.ix) / m_xyScale) * si::centi<si::metre>;
+        cell.y      = (static_cast<double>(key.iy) / m_xyScale) * si::centi<si::metre>;
+        cell.height = (static_cast<double>(key.ih) / m_hScale)  * si::centi<si::metre>;
+        cell.value  = value;
+        result.push_back(cell);
+    }
+
+    return result;
 }
 
 } // namespace drone

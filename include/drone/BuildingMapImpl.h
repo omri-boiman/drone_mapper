@@ -5,6 +5,7 @@
 #include <utility>
 #include "interfaces/IBuildingMap.h"
 #include "io/ConfigParser.h"
+#include "io/MapIO.h"
 
 namespace drone {
 
@@ -39,6 +40,9 @@ public:
 
     // Silently ignores positions outside the mission boundary.
     void Set(Centi x, Centi y, Centi height, MapValue value) override;
+
+    // Return every recorded cell so the output file can be written.
+    std::vector<MapCell> GetAllCells() const;
 
 private:
     // Integer key for the sparse hash map
