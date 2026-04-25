@@ -8,7 +8,9 @@ MockPositionSensor::MockPositionSensor(std::shared_ptr<SimulationState> state)
 
 Position3D MockPositionSensor::GetPosition() const
 {
-    return m_state->position;
+    Position3D pos = m_state->position;
+    pos.heading = m_state->orientation.heading;
+    return pos;
 }
 
 } // namespace drone

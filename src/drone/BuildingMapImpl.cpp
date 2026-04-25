@@ -1,6 +1,7 @@
 #include "drone/BuildingMapImpl.h"
 #include "io/MapIO.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace drone {
@@ -12,9 +13,25 @@ BuildingMapImpl::BuildingMapImpl(const MissionConfig& mission)
     , m_minHeight(mission.minHeight)
     , m_maxHeight(mission.maxHeight)
 {
-    // Pre-compute scale factors from decimal-place settings
     m_xyScale = std::pow(10.0, static_cast<double>(mission.outputResXYDecimals));
     m_hScale  = std::pow(10.0, static_cast<double>(mission.outputResHDecimals));
+
+    // Detect axis-aligned rectangle: 4 vertices where every x is xmin or xmax
+    // and every y is ymin or ymax.  Ray-casting misses points on the far edges
+    // (x=xmax, y=ymax), so we switch to an inclusive range check in that case.
+    if (m_polygon.size() == 4) {
+        double xs[4], ys[4];
+        for (int i = 0; i < 4; ++i) { xs[i] = m_polygon[i].first; ys[i] = m_polygon[i].second; }
+        m_rectXmin = *std::min_element(xs, xs+4);
+        m_rectXmax = *std::max_element(xs, xs+4);
+        m_rectYmin = *std::min_element(ys, ys+4);
+        m_rectYmax = *std::max_element(ys, ys+4);
+
+        bool isRect = true;
+        for (double x : xs) if (std::abs(x - m_rectXmin) > 0.01 && std::abs(x - m_rectXmax) > 0.01) { isRect = false; break; }
+        if (isRect) for (double y : ys) if (std::abs(y - m_rectYmin) > 0.01 && std::abs(y - m_rectYmax) > 0.01) { isRect = false; break; }
+        m_isRect = isRect;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -32,8 +49,14 @@ BuildingMapImpl::Key BuildingMapImpl::MakeKey(double xCm, double yCm, double hCm
 
 bool BuildingMapImpl::IsInsidePolygon(double xCm, double yCm) const
 {
-    // Ray-casting algorithm: count crossings of a horizontal ray from (x,y)
-    // going in the +X direction with each polygon edge.
+    // Axis-aligned rectangle: use inclusive range check so all four walls
+    // (including x=xmax and y=ymax) are treated as inside.
+    if (m_isRect) {
+        return xCm >= m_rectXmin && xCm <= m_rectXmax &&
+               yCm >= m_rectYmin && yCm <= m_rectYmax;
+    }
+
+    // General polygon: ray-casting algorithm.
     const std::size_t n = m_polygon.size();
     if (n < 3) return false;
 

@@ -1,4 +1,7 @@
-boundary_polygon = (0,0),(800,0),(800,600),(0,600)
+boundary_xmin_cm = 0
+boundary_xmax_cm = 800
+boundary_ymin_cm = 0
+boundary_ymax_cm = 600
 min_height_cm = 0
 max_height_cm = 300
 output_resolution_xy_decimals = 2

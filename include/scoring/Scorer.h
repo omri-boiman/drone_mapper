@@ -29,10 +29,14 @@ public:
     //              (Get() returns BeyondBounds for out-of-bounds positions)
     // droneCells — the complete set of cells the drone recorded
     // groundTruth / bounds — the reference map
+    // xyScale = 10^outputResXYDecimals, hScale = 10^outputResHDecimals
+    // Both maps are rasterised to this grid before comparison, as per the v2 spec.
     static double ComputeScore(const IBuildingMap&         droneMap,
                                const std::vector<MapCell>& droneCells,
                                const ParsedMap&            groundTruth,
-                               const MapBounds&            bounds);
+                               const MapBounds&            bounds,
+                               double                      xyScale,
+                               double                      hScale);
 };
 
 } // namespace drone

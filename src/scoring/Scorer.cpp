@@ -14,12 +14,6 @@ namespace drone {
 
 namespace {
 
-// GT cells are on a 10 cm grid.  Snap everything to 10 cm so that:
-//   1. Diagonal lidar hits (landing ~4 cm inside a wall) still match GT cells.
-//   2. Drone Empty cells are compared at the same granularity.
-// SCALE = 0.1  →  key unit = 10 cm.
-constexpr double SCALE = 0.1;
-
 struct IKey3 {
     int x, y, h;
     bool operator==(const IKey3& o) const noexcept {
@@ -35,10 +29,11 @@ struct IKey3Hash {
     }
 };
 
-IKey3 MakeKey(double xCm, double yCm, double hCm) {
-    return { static_cast<int>(std::round(xCm * SCALE)),
-             static_cast<int>(std::round(yCm * SCALE)),
-             static_cast<int>(std::round(hCm * SCALE)) };
+IKey3 MakeKey(double xCm, double yCm, double hCm, double xyScale, double hScale)
+{
+    return { static_cast<int>(std::round(xCm * xyScale)),
+             static_cast<int>(std::round(yCm * xyScale)),
+             static_cast<int>(std::round(hCm * hScale)) };
 }
 
 } // anonymous namespace
@@ -46,17 +41,15 @@ IKey3 MakeKey(double xCm, double yCm, double hCm) {
 // ---------------------------------------------------------------------------
 // Scorer::ComputeScore
 //
-// Both maps are rasterised to the GT's native 10 cm grid before comparison so
-// that diagonal lidar hits (which land a few cm inside a wall surface) still
-// match the GT cells, and the cell counts stay bounded regardless of output
-// resolution.
+// Both maps are rasterised to the output-resolution grid (per v2 spec) before
+// comparison.  xyScale = 10^outputResXYDecimals, hScale = 10^outputResHDecimals.
 //
 // Steps
 // -----
-// 1. Build gtOccupied: GT Occupied cells reachable by the drone (not BeyondBounds),
-//    keyed at 10 cm resolution.  Only these cells contribute to gt_occupied.
-// 2. Deduplicate the drone's recorded cells at 10 cm: when both Occupied and
-//    Empty fall in the same voxel, Occupied wins.
+// 1. Build gtOccupied: GT Occupied cells reachable by the drone, keyed at
+//    output resolution.  Only these cells contribute to gt_occupied.
+// 2. Deduplicate the drone's recorded cells at output resolution: when both
+//    Occupied and Empty fall in the same voxel, Occupied wins.
 // 3. Walk the deduplicated drone voxels:
 //    - Occupied + in gtOccupied → correctly_occupied
 //    - Empty    + not in gtOccupied → correctly_empty; total → reachable_empty
@@ -66,8 +59,13 @@ IKey3 MakeKey(double xCm, double yCm, double hCm) {
 double Scorer::ComputeScore(const IBuildingMap&         droneMap,
                             const std::vector<MapCell>& droneCells,
                             const ParsedMap&            groundTruth,
-                            const MapBounds&            bounds [[maybe_unused]])
+                            const MapBounds&            bounds [[maybe_unused]],
+                            double                      xyScale,
+                            double                      hScale)
 {
+    std::cerr << "[Scorer Debug]  output resolution: xy=" << xyScale
+              << "  h=" << hScale << "\n";
+
     // 1. Build GT occupied set (only cells the drone map considers reachable).
     std::unordered_set<IKey3, IKey3Hash> gtOccupied;
     long long gt_occupied = 0;
@@ -75,15 +73,16 @@ double Scorer::ComputeScore(const IBuildingMap&         droneMap,
     for (const auto& cell : groundTruth.cells) {
         if (cell.value != MapValue::Occupied) continue;
         if (droneMap.Get(cell.x, cell.y, cell.height) == MapValue::BeyondBounds)
-            continue;  // outside the mission polygon — drone can't map it
+            continue;
         ++gt_occupied;
         gtOccupied.insert(MakeKey(
             cell.x.numerical_value_in(si::centi<si::metre>),
             cell.y.numerical_value_in(si::centi<si::metre>),
-            cell.height.numerical_value_in(si::centi<si::metre>)));
+            cell.height.numerical_value_in(si::centi<si::metre>),
+            xyScale, hScale));
     }
 
-    // 2. Deduplicate drone cells at 10 cm.  Occupied beats Empty in the same voxel.
+    // 2. Deduplicate drone cells at output resolution. Occupied beats Empty.
     std::unordered_map<IKey3, MapValue, IKey3Hash> droneCoarse;
     droneCoarse.reserve(droneCells.size());
 
@@ -91,13 +90,14 @@ double Scorer::ComputeScore(const IBuildingMap&         droneMap,
         IKey3 k = MakeKey(
             cell.x.numerical_value_in(si::centi<si::metre>),
             cell.y.numerical_value_in(si::centi<si::metre>),
-            cell.height.numerical_value_in(si::centi<si::metre>));
+            cell.height.numerical_value_in(si::centi<si::metre>),
+            xyScale, hScale);
 
         auto it = droneCoarse.find(k);
         if (it == droneCoarse.end()) {
             droneCoarse[k] = cell.value;
         } else if (cell.value == MapValue::Occupied) {
-            it->second = MapValue::Occupied;  // Occupied overrides Empty
+            it->second = MapValue::Occupied;
         }
     }
 

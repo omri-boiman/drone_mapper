@@ -1,11 +1,11 @@
 boundary_xmin_cm = 0
-boundary_xmax_cm = 1200
+boundary_xmax_cm = 600
 boundary_ymin_cm = 0
-boundary_ymax_cm = 600
+boundary_ymax_cm = 300
 min_height_cm = 0
 max_height_cm = 300
 output_resolution_xy_decimals = 2
 output_resolution_h_decimals = 2
-start_x_cm = 200
-start_y_cm = 300
+start_x_cm = 150
+start_y_cm = 150
 start_height_cm = 150

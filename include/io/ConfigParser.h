@@ -17,16 +17,20 @@ struct DroneConfig {
     Centi   minPassLength {60.0  * si::centi<si::metre>};
     Centi   minPassHeight {120.0 * si::centi<si::metre>};
 
-    // Lidar field of view (full cone angle) and scan range
-    Degrees lidarFov      {90.0   * si::degree};
-    Centi   lidarMinRange {20.0   * si::centi<si::metre>};
-    Centi   lidarMaxRange {1000.0 * si::centi<si::metre>};
+    // Lidar range (Z-min / Z-max)
+    Centi   lidarMinRange {20.0   * si::centi<si::metre>};  // Z-min
+    Centi   lidarMaxRange {1000.0 * si::centi<si::metre>};  // Z-max
 
-    // Lidar resolution calibration: cell side length at two reference distances
-    Centi   lidarResAtDist1 {5.0   * si::centi<si::metre>};
-    Centi   lidarDist1      {100.0 * si::centi<si::metre>};
-    Centi   lidarResAtDist2 {20.0  * si::centi<si::metre>};
-    Centi   lidarDist2      {800.0 * si::centi<si::metre>};
+    // v2 circular beam model parameters
+    Centi   lidarD    {5.0 * si::centi<si::metre>}; // beam-circle spacing at Z-min
+    int     lidarFovc {5};                           // number of beam circles (0=centre only)
+
+    // v1 fields kept for backward-compat parsing (not used by the v2 sensor)
+    Degrees lidarFov        {90.0   * si::degree};
+    Centi   lidarResAtDist1 {5.0    * si::centi<si::metre>};
+    Centi   lidarDist1      {100.0  * si::centi<si::metre>};
+    Centi   lidarResAtDist2 {20.0   * si::centi<si::metre>};
+    Centi   lidarDist2      {800.0  * si::centi<si::metre>};
 
     // Maximum movement per single command
     Degrees maxRotate {45.0 * si::degree};

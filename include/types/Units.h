@@ -14,11 +14,13 @@ using Meters    = quantity<si::metre,        double>;
 using Centi     = quantity<si::centi<si::metre>, double>;
 using Degrees   = quantity<si::degree,       double>;
 
-// 3D position: X, Y in the horizontal plane, Height on the vertical axis
+// 3D position: X, Y in the horizontal plane, Height on the vertical axis.
+// heading is also included per v2 spec (position sensor now reports XY-Angle).
 struct Position3D {
-    Centi x;
-    Centi y;
-    Centi height;
+    Centi   x;
+    Centi   y;
+    Centi   height;
+    Degrees heading {0.0 * si::degree};
 };
 
 // Drone orientation: heading angle in the XY plane (0 = positive X axis, clockwise)

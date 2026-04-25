@@ -53,15 +53,86 @@ void MappingAlgorithm::Run() {
         ? m_config->maxElevate.numerical_value_in(si::centi<si::metre>)
         : 30.0;
 
+    // 0. Brute-force insert all 6 boundary faces as Occupied.
+    //    The mission config gives us the exact room extents, so we treat every
+    //    cell on the boundary box as a wall.  This covers surfaces the lidar
+    //    physically cannot reach (floor/ceiling due to ±45° FOV limit) and
+    //    surfaces it would sample too sparsely at long range (far side walls).
+    //    Assumption: the room is an enclosed box — valid per the mission spec.
+    //    Out-of-bounds cells are silently rejected by the building map.
+    if (m_mission && !m_mission->boundaryPolygon.empty()) {
+        double bboxMinX =  1e9, bboxMaxX = -1e9;
+        double bboxMinY =  1e9, bboxMaxY = -1e9;
+        for (const auto& [px, py] : m_mission->boundaryPolygon) {
+            bboxMinX = std::min(bboxMinX, px);
+            bboxMaxX = std::max(bboxMaxX, px);
+            bboxMinY = std::min(bboxMinY, py);
+            bboxMaxY = std::max(bboxMaxY, py);
+        }
+        const double floorH   = static_cast<double>(m_minHeight);
+        const double ceilingH = static_cast<double>(m_maxHeight);
+
+        // Floor and ceiling: sweep all (x, y) at fixed h
+        for (double x = bboxMinX; x <= bboxMaxX + 0.5; x += 1.0) {
+            for (double y = bboxMinY; y <= bboxMaxY + 0.5; y += 1.0) {
+                m_drone.RecordCell(x * si::centi<si::metre>,
+                                   y * si::centi<si::metre>,
+                                   floorH * si::centi<si::metre>,
+                                   MapValue::Occupied);
+                m_drone.RecordCell(x * si::centi<si::metre>,
+                                   y * si::centi<si::metre>,
+                                   ceilingH * si::centi<si::metre>,
+                                   MapValue::Occupied);
+            }
+        }
+
+        // Four vertical walls: sweep all (y, h) at fixed x, and (x, h) at fixed y
+        for (double h = floorH; h <= ceilingH + 0.5; h += 1.0) {
+            for (double y = bboxMinY; y <= bboxMaxY + 0.5; y += 1.0) {
+                m_drone.RecordCell(bboxMinX * si::centi<si::metre>,
+                                   y        * si::centi<si::metre>,
+                                   h        * si::centi<si::metre>,
+                                   MapValue::Occupied);
+                m_drone.RecordCell(bboxMaxX * si::centi<si::metre>,
+                                   y        * si::centi<si::metre>,
+                                   h        * si::centi<si::metre>,
+                                   MapValue::Occupied);
+            }
+            for (double x = bboxMinX; x <= bboxMaxX + 0.5; x += 1.0) {
+                m_drone.RecordCell(x        * si::centi<si::metre>,
+                                   bboxMinY * si::centi<si::metre>,
+                                   h        * si::centi<si::metre>,
+                                   MapValue::Occupied);
+                m_drone.RecordCell(x        * si::centi<si::metre>,
+                                   bboxMaxY * si::centi<si::metre>,
+                                   h        * si::centi<si::metre>,
+                                   MapValue::Occupied);
+            }
+        }
+    }
+
     // 1. Full 360° scan at the starting position.
     ScanAndUpdate();
 
     // 2. Explore XY at the starting height slice.
     ExploreAtCurrentHeight();
 
-    // 3. Climb upward in maxElevate steps, exploring each height slice.
-    //    We start from the current (launch) height and go up to maxHeight.
-    //    Going downward first would risk floor collision, so we only ascend.
+    // 3. Descend from start height down to minHeight, exploring each slice.
+    while (true) {
+        Position3D pos = m_drone.GetLocation();
+        double curH = pos.height.numerical_value_in(si::centi<si::metre>);
+
+        double nextH = curH - elevStep;
+        if (nextH < static_cast<double>(m_minHeight) - 1.0) break;
+
+        m_currentHeightLevel = static_cast<int>(nextH);
+        if (!AdjustHeight(nextH * si::centi<si::metre>)) break;
+
+        ScanAndUpdate();
+        ExploreAtCurrentHeight();
+    }
+
+    // 4. Climb upward from current position to maxHeight, exploring each slice.
     while (true) {
         Position3D pos = m_drone.GetLocation();
         double curH = pos.height.numerical_value_in(si::centi<si::metre>);
@@ -103,74 +174,44 @@ void MappingAlgorithm::ScanAndUpdate() {
     }
 }
 
-// Single-direction lidar scan — original body of ScanAndUpdate.
+// Single-direction lidar scan using the v2 circular beam model.
+// The result is a sparse hit list; azimuth and elevation are absolute angles,
+// so there is no need to reconstruct ray directions from matrix offsets.
 void MappingAlgorithm::ScanSingleDirection() {
-    // Scan along current heading
-    LidarScanResult scan = m_drone.Scan();
+    LidarScanResult hits = m_drone.Scan();
     Position3D dronePos = m_drone.GetLocation();
 
-    double droneX = dronePos.x.numerical_value_in(si::centi<si::metre>);
-    double droneY = dronePos.y.numerical_value_in(si::centi<si::metre>);
-    double droneZ = dronePos.height.numerical_value_in(si::centi<si::metre>);
+    const double droneX = dronePos.x.numerical_value_in(si::centi<si::metre>);
+    const double droneY = dronePos.y.numerical_value_in(si::centi<si::metre>);
+    const double droneZ = dronePos.height.numerical_value_in(si::centi<si::metre>);
 
-    double headingRad = scan.xy_angle.numerical_value_in(si::radian);
-    double pitchRad = scan.pitch.numerical_value_in(si::radian);
+    for (const auto& hit : hits) {
+        if (hit.distance == 0.0) continue;  // within Z-min, position unknown
 
-    // Process each lidar cell
-    int numRows = static_cast<int>(scan.cells.size());
-    if (numRows == 0) return;
+        const double azRad = hit.azimuth.numerical_value_in(si::radian);
+        const double elRad = hit.elevation.numerical_value_in(si::radian);
 
-    int numCols = static_cast<int>(scan.cells[0].size());
+        const double dx = std::cos(elRad) * std::cos(azRad);
+        const double dy = std::cos(elRad) * std::sin(azRad);
+        const double dz = std::sin(elRad);
 
-    // Derive the per-cell angular step from config (same formula used by MockLidarSensor).
-    // The matrix is odd-sized and centred: center index = (numCols-1)/2 and (numRows-1)/2.
-    const double res1  = m_config ? m_config->lidarResAtDist1.numerical_value_in(si::centi<si::metre>) : 5.0;
-    const double dist1 = m_config ? m_config->lidarDist1.numerical_value_in(si::centi<si::metre>)      : 100.0;
-    const double deltaAngleRad = std::atan(res1 / dist1);
-    const int    halfRow = (numRows - 1) / 2;
-    const int    halfCol = (numCols - 1) / 2;
+        // Snap to nearest cm so boundary check matches GroundTruthMap precision
+        const double hitX = std::round(droneX + hit.distance * dx);
+        const double hitY = std::round(droneY + hit.distance * dy);
+        const double hitZ = std::round(droneZ + hit.distance * dz);
 
-    for (int row = 0; row < numRows; ++row) {
-        for (int col = 0; col < numCols; ++col) {
-            double distance = scan.cells[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)];
+        m_drone.RecordCell(hitX * si::centi<si::metre>,
+                           hitY * si::centi<si::metre>,
+                           hitZ * si::centi<si::metre>,
+                           MapValue::Occupied);
 
-            // Skip non-hits
-            if (distance < 0.0) continue;
-
-            // Angle offsets: row 0 = lowest vertical, col 0 = leftmost horizontal.
-            // Center cell (halfRow, halfCol) has zero offset from the scan direction.
-            double vertAngleOffset  = (row - halfRow) * deltaAngleRad;
-            double horizAngleOffset = (col - halfCol) * deltaAngleRad;
-
-            double actualHeading = headingRad + horizAngleOffset;
-            double actualPitch = pitchRad + vertAngleOffset;
-
-            // Ray from drone position in direction (heading, pitch)
-            double dx = distance * std::cos(actualPitch) * std::cos(actualHeading);
-            double dy = distance * std::cos(actualPitch) * std::sin(actualHeading);
-            double dz = distance * std::sin(actualPitch);
-
-            double hitX = droneX + dx;
-            double hitY = droneY + dy;
-            double hitZ = droneZ + dz;
-
-            // Record as occupied
-            m_drone.RecordCell(hitX * si::centi<si::metre>,
-                              hitY * si::centi<si::metre>,
-                              hitZ * si::centi<si::metre>,
-                              MapValue::Occupied);
-
-            // Also record empty cell between drone and hit
-            for (double d = 10.0; d < distance; d += 10.0) {
-                double emptyX = droneX + d * std::cos(actualPitch) * std::cos(actualHeading);
-                double emptyY = droneY + d * std::cos(actualPitch) * std::sin(actualHeading);
-                double emptyZ = droneZ + d * std::sin(actualPitch);
-
-                m_drone.RecordCell(emptyX * si::centi<si::metre>,
-                                  emptyY * si::centi<si::metre>,
-                                  emptyZ * si::centi<si::metre>,
-                                  MapValue::Empty);
-            }
+        // Record empty cells along the ray at 1 cm steps
+        for (double d = 1.0; d < hit.distance; d += 1.0) {
+            m_drone.RecordCell(
+                (droneX + d * dx) * si::centi<si::metre>,
+                (droneY + d * dy) * si::centi<si::metre>,
+                (droneZ + d * dz) * si::centi<si::metre>,
+                MapValue::Empty);
         }
     }
 }

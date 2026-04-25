@@ -64,8 +64,8 @@ private:
     Key MakeKey(double xCm, double yCm, double hCm) const;
     bool IsInBounds(Centi x, Centi y, Centi height) const;
 
-    // Point-in-polygon test (ray-casting) for the XY boundary.
-    // Polygon vertices are raw doubles (cm) for use in the geometric algorithm.
+    // XY boundary test: uses inclusive rect check for axis-aligned rectangles,
+    // falls back to ray-casting for arbitrary polygons.
     bool IsInsidePolygon(double xCm, double yCm) const;
 
     std::unordered_map<Key, MapValue, KeyHash> m_cells;
@@ -75,6 +75,12 @@ private:
     Centi  m_maxHeight;
     double m_xyScale;  // 10^outputResXYDecimals
     double m_hScale;   // 10^outputResHDecimals
+
+    // Set to true when the polygon is an axis-aligned rectangle so we can use
+    // an inclusive range check (ray-casting misses points on the far edges).
+    bool   m_isRect {false};
+    double m_rectXmin {0}, m_rectXmax {0};
+    double m_rectYmin {0}, m_rectYmax {0};
 };
 
 } // namespace drone

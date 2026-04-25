@@ -186,16 +186,20 @@ bool ParseDroneConfig(const std::filesystem::path& filePath,
 
     const std::string f = filePath.filename().string();
 
-    out.minPassWidth  = GetCenti  (kv, "min_pass_width_cm",        out.minPassWidth,   f, logger);
-    out.minPassLength = GetCenti  (kv, "min_pass_length_cm",       out.minPassLength,  f, logger);
-    out.minPassHeight = GetCenti  (kv, "min_pass_height_cm",       out.minPassHeight,  f, logger);
-    out.lidarFov      = GetDegrees(kv, "lidar_fov_deg",            out.lidarFov,       f, logger);
-    out.lidarMinRange = GetCenti  (kv, "lidar_min_range_cm",       out.lidarMinRange,  f, logger);
-    out.lidarMaxRange = GetCenti  (kv, "lidar_max_range_cm",       out.lidarMaxRange,  f, logger);
-    out.lidarResAtDist1 = GetCenti(kv, "lidar_res_at_dist1_cm",   out.lidarResAtDist1, f, logger);
-    out.lidarDist1      = GetCenti(kv, "lidar_dist1_cm",           out.lidarDist1,      f, logger);
-    out.lidarResAtDist2 = GetCenti(kv, "lidar_res_at_dist2_cm",   out.lidarResAtDist2, f, logger);
-    out.lidarDist2      = GetCenti(kv, "lidar_dist2_cm",           out.lidarDist2,      f, logger);
+    out.minPassWidth  = GetCenti  (kv, "min_pass_width_cm",  out.minPassWidth,  f, logger);
+    out.minPassLength = GetCenti  (kv, "min_pass_length_cm", out.minPassLength, f, logger);
+    out.minPassHeight = GetCenti  (kv, "min_pass_height_cm", out.minPassHeight, f, logger);
+    // v2 lidar fields
+    out.lidarMinRange = GetCenti  (kv, "lidar_min_range_cm", out.lidarMinRange, f, logger);
+    out.lidarMaxRange = GetCenti  (kv, "lidar_max_range_cm", out.lidarMaxRange, f, logger);
+    out.lidarD        = GetCenti  (kv, "lidar_D_cm",         out.lidarD,        f, logger);
+    out.lidarFovc     = GetInt    (kv, "lidar_fovc",         out.lidarFovc,     f, logger);
+    // v1 backward-compat fields (parsed but not used by the v2 sensor)
+    out.lidarFov        = GetDegrees(kv, "lidar_fov_deg",          out.lidarFov,        f, logger);
+    out.lidarResAtDist1 = GetCenti  (kv, "lidar_res_at_dist1_cm",  out.lidarResAtDist1, f, logger);
+    out.lidarDist1      = GetCenti  (kv, "lidar_dist1_cm",         out.lidarDist1,      f, logger);
+    out.lidarResAtDist2 = GetCenti  (kv, "lidar_res_at_dist2_cm",  out.lidarResAtDist2, f, logger);
+    out.lidarDist2      = GetCenti  (kv, "lidar_dist2_cm",         out.lidarDist2,      f, logger);
     out.maxRotate  = GetDegrees(kv, "max_rotate_deg",  out.maxRotate,  f, logger);
     out.maxAdvance = GetCenti  (kv, "max_advance_cm",  out.maxAdvance, f, logger);
     out.maxElevate = GetCenti  (kv, "max_elevate_cm",  out.maxElevate, f, logger);
@@ -217,7 +221,20 @@ bool ParseMissionConfig(const std::filesystem::path& filePath,
 
     const std::string f = filePath.filename().string();
 
-    out.boundaryPolygon     = ParsePolygon(Find(kv, "boundary_polygon"), f, logger);
+    // v2 rectangle format takes priority; fall back to v1 polygon if absent
+    const std::string rxmin = Find(kv, "boundary_xmin_cm");
+    const std::string rxmax = Find(kv, "boundary_xmax_cm");
+    const std::string rymin = Find(kv, "boundary_ymin_cm");
+    const std::string rymax = Find(kv, "boundary_ymax_cm");
+    if (!rxmin.empty() && !rxmax.empty() && !rymin.empty() && !rymax.empty()) {
+        const double xmin = GetDouble(kv, "boundary_xmin_cm", 0.0, f, logger);
+        const double xmax = GetDouble(kv, "boundary_xmax_cm", 0.0, f, logger);
+        const double ymin = GetDouble(kv, "boundary_ymin_cm", 0.0, f, logger);
+        const double ymax = GetDouble(kv, "boundary_ymax_cm", 0.0, f, logger);
+        out.boundaryPolygon = {{xmin, ymin}, {xmax, ymin}, {xmax, ymax}, {xmin, ymax}};
+    } else {
+        out.boundaryPolygon = ParsePolygon(Find(kv, "boundary_polygon"), f, logger);
+    }
     out.minHeight           = GetCenti(kv, "min_height_cm",  out.minHeight,  f, logger);
     out.maxHeight           = GetCenti(kv, "max_height_cm",  out.maxHeight,  f, logger);
     out.outputResXYDecimals = GetInt(kv, "output_resolution_xy_decimals",

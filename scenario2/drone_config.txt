@@ -11,3 +11,6 @@ lidar_dist2_cm = 800
 max_rotate_deg = 45
 max_advance_cm = 50
 max_elevate_cm = 30
+
+lidar_D_cm = 5
+lidar_fovc = 5

@@ -9,19 +9,15 @@
 namespace drone {
 
 // ---------------------------------------------------------------------------
-// MockLidarSensor
+// MockLidarSensor — v2 circular beam model
 //
-// Implements ILidarSensor by ray-casting against the GroundTruthMap.
+// The lidar emits beams arranged in concentric circles around the scan centre:
+//   Circle 0 : 1 beam (centre)
+//   Circle N : 4^N beams, angular radius = N * atan(D / Z-min) from centre
+//              beams are evenly distributed around the circumference
 //
-// Matrix dimensions are derived from the FOV and the resolution at dist1:
-//   deltaAngle = atan(resAtDist1 / dist1)
-//   numCells   = 2*floor(fov_rad / (2*deltaAngle)) + 1   (odd, centred)
-//
-// Each ray is stepped in 1 cm increments (matches GroundTruthMap quantisation).
-// Return values per cell:
-//   positive  : distance in cm to first occupied voxel
-//   -1.0      : no hit within maxRange
-//   -2.0      : hit detected below minRange
+// Only beams that hit something within [Z-min, Z-max] appear in the result.
+// A hit within Z-min is included with distance=0 (too close to measure).
 // ---------------------------------------------------------------------------
 class MockLidarSensor : public ILidarSensor {
 public:
@@ -38,7 +34,7 @@ private:
     const DroneConfig&               m_config;
     const GroundTruthMap&            m_groundTruth;
 
-    // Cast a single ray; returns distance in cm, -1 or -2
+    // Cast a single ray; returns distance in cm, -1 (no hit), or -2 (< Z-min)
     double CastRay(double originX, double originY, double originH,
                    double dx, double dy, double dz) const;
 };

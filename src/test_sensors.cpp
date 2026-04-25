@@ -46,13 +46,17 @@ static void Check(const std::string& label, bool condition)
 static DroneConfig MakeTestDroneConfig()
 {
     DroneConfig c;
-    c.lidarFov         = 90.0  * si::degree;
-    c.lidarMinRange    = 20.0  * si::centi<si::metre>;
-    c.lidarMaxRange    = 500.0 * si::centi<si::metre>;
-    c.lidarResAtDist1  = 5.0   * si::centi<si::metre>;
-    c.lidarDist1       = 100.0 * si::centi<si::metre>;
-    c.lidarResAtDist2  = 20.0  * si::centi<si::metre>;
-    c.lidarDist2       = 800.0 * si::centi<si::metre>;
+    // v2 lidar model
+    c.lidarMinRange = 20.0  * si::centi<si::metre>;
+    c.lidarMaxRange = 500.0 * si::centi<si::metre>;
+    c.lidarD        = 5.0   * si::centi<si::metre>;
+    c.lidarFovc     = 5;
+    // v1 backward-compat fields (not used by the new sensor)
+    c.lidarFov        = 90.0  * si::degree;
+    c.lidarResAtDist1 = 5.0   * si::centi<si::metre>;
+    c.lidarDist1      = 100.0 * si::centi<si::metre>;
+    c.lidarResAtDist2 = 20.0  * si::centi<si::metre>;
+    c.lidarDist2      = 800.0 * si::centi<si::metre>;
     c.maxRotate  = 45.0  * si::degree;
     c.maxAdvance = 100.0 * si::centi<si::metre>;
     c.maxElevate = 50.0  * si::centi<si::metre>;
@@ -176,27 +180,27 @@ static void TestLidarSensor()
 
     MockLidarSensor lidar(state, config, gtMap);
 
-    // Default scan: use drone heading (0 deg), pitch 0
+    // Default scan along heading (0 deg = +X direction). Wall is 200 cm away.
     const LidarScanResult result = lidar.Scan();
 
-    Check("Scan result has non-zero matrix",
-          !result.cells.empty() && !result.cells[0].empty());
-    Check("xy_angle matches drone heading (0 deg)",
-          std::abs(result.xy_angle.numerical_value_in(si::degree)) < 0.001);
-    Check("pitch is 0 deg",
-          std::abs(result.pitch.numerical_value_in(si::degree)) < 0.001);
+    Check("Scan returns some hits", !result.empty());
 
-    // Centre cell (half, half) should hit the wall at ~200 cm
-    const std::size_t half = result.cells.size() / 2;
-    const double centreDist = result.cells[half][half];
-    Check("Centre ray hits wall (distance in range 195–205 cm)",
-          centreDist >= 195.0 && centreDist <= 205.0);
+    // The centre beam (azimuth≈0°, elevation≈0°) must hit the wall at ~200 cm
+    bool foundCentreHit = false;
+    for (const auto& hit : result) {
+        const double az = hit.azimuth.numerical_value_in(si::degree);
+        const double el = hit.elevation.numerical_value_in(si::degree);
+        if (std::abs(az) < 5.0 && std::abs(el) < 5.0 &&
+            hit.distance >= 195.0 && hit.distance <= 205.0) {
+            foundCentreHit = true;
+            break;
+        }
+    }
+    Check("Centre beam hits wall at ~200 cm", foundCentreHit);
 
-    // Scan with offset +90 deg from heading (0 deg heading → points in +Y): no wall there → -1
+    // 90-deg offset scan points in +Y; no wall in that direction → no hits
     const LidarScanResult result90 = lidar.Scan(90.0 * si::degree);
-    const double centre90 = result90.cells[half][half];
-    Check("90-deg offset scan: centre ray has no hit (-1)",
-          centre90 == -1.0);
+    Check("90-deg offset scan: no hits (no wall in +Y direction)", result90.empty());
 }
 
 static void TestBuildingMap()
@@ -328,14 +332,20 @@ static void TestDrone()
           std::abs(drone.GetLocation().height.numerical_value_in(si::centi<si::metre>)
                    - (startH + 30.0)) < 0.5);
 
-    // --- Scan returns a valid matrix pointing toward the wall ---
+    // --- Scan returns hits toward the wall (~100 cm away after advance) ---
     const LidarScanResult scan = drone.Scan();
-    Check("Scan returns non-empty matrix",
-          !scan.cells.empty() && !scan.cells[0].empty());
-    const std::size_t half = scan.cells.size() / 2;
-    const double centreDist = scan.cells[half][half];
-    Check("Scan centre ray hits wall (~100 cm away after advance)",
-          centreDist >= 95.0 && centreDist <= 105.0);
+    Check("Scan returns some hits", !scan.empty());
+    bool foundWallHit = false;
+    for (const auto& hit : scan) {
+        const double az = hit.azimuth.numerical_value_in(si::degree);
+        const double el = hit.elevation.numerical_value_in(si::degree);
+        if (std::abs(az) < 5.0 && std::abs(el) < 5.0 &&
+            hit.distance >= 95.0 && hit.distance <= 105.0) {
+            foundWallHit = true;
+            break;
+        }
+    }
+    Check("Scan centre beam hits wall at ~100 cm", foundWallHit);
 
     // --- RecordCell / QueryCell round-trip ---
     drone.RecordCell(200.0 * si::centi<si::metre>,

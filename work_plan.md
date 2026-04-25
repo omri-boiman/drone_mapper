@@ -1,11 +1,17 @@
 # Drone Mapper — Assignment 1 Implementation Plan
 
 ## Context
-TAU Advanced Topics in Programming, Semester B 2026 — Assignment 1 (due May 10th).
+TAU Advanced Topics in Programming, Semester B 2026 — Assignment 1 v2 (due May 17th).
 Build a C++ simulator for an autonomous 3D-building-mapping drone. The drone uses mock
 sensors (Lidar, Position, Movement) to navigate and construct a sparse 3D occupancy map.
 No real hardware; everything is a software simulation. Next assignments will dictate a common
 API, so design clean interfaces now to minimize future refactoring pain.
+
+> **v2 vs v1 changes (April 2026):** deadline extended to May 17; position sensor now also
+> returns XY-Angle (heading); lidar model replaced (matrix → circular beams, see Phase 2);
+> lidar scan result changed (NxN matrix → sparse hit list with azimuth+distance); mission
+> boundary simplified (polygon → bounded rectangle); FAQ clarifies blind spots cannot be
+> interpolated — every cell must be actively mapped.
 
 ## Submission Requirements (from Submission Guidelines)
 - **Compiler**: gcc 11.4+, flags: `g++ -std=c++20 -Wall -Wextra -Werror -pedantic`
@@ -123,21 +129,26 @@ Use C++20 (not C++23). Avoid C++23-only features. Key C++20 features available:
 min_pass_width_cm = 60
 min_pass_length_cm = 60
 min_pass_height_cm = 120
-lidar_fov_deg = 90
-lidar_min_range_cm = 20
-lidar_max_range_cm = 1000
-lidar_res_at_dist1_cm = 5    # resolution (cell side) at calibration distance 1
-lidar_dist1_cm = 100
-lidar_res_at_dist2_cm = 20   # resolution (cell side) at calibration distance 2
-lidar_dist2_cm = 800
+# Lidar — v2 circular beam model:
+lidar_zmin_cm = 20           # min operational distance; hit reported as distance=0 below this
+lidar_zmax_cm = 1000         # max operational distance; no detection beyond this
+lidar_D_cm = 5               # spacing between consecutive beam circles at Z-min distance
+                             # (circle 1 radius = D, circle 2 radius = 2D, etc.)
+lidar_fovc = 5               # number of beam circles (0=centre only; N circles → 1+4+16+…+4^N beams)
 max_rotate_deg = 45
 max_advance_cm = 50
 max_elevate_cm = 30
+# v1 fields kept for backward-compat parsing (ignored if lidar_fovc present):
+# lidar_fov_deg, lidar_res_at_dist1_cm, lidar_dist1_cm, lidar_res_at_dist2_cm, lidar_dist2_cm
 ```
 
 ### mission_config.txt
 ```
-boundary_polygon = (0,0),(2000,0),(2000,1500),(0,1500)
+# v2: boundary is a simple rectangle (replaces v1 polygon)
+boundary_xmin_cm = 0
+boundary_xmax_cm = 2000
+boundary_ymin_cm = 0
+boundary_ymax_cm = 1500
 min_height_cm = 0
 max_height_cm = 300
 output_resolution_xy_decimals = 2
@@ -176,21 +187,25 @@ END
 
 **Milestone:** Compiles; reads all three files; prints any config errors.
 
-### Phase 2 — Mock Sensors ✅ COMPLETE
+### Phase 2 — Mock Sensors ✅ COMPLETE (v1 model; needs v2 lidar adaptation)
 11. `SimulationState` — simple struct, `shared_ptr` shared by all mocks
 12. `MockPositionSensor` — returns `state->current_position`
+    - **v2 change:** must also return XY-Angle (heading) from `state->orientation`
 13. `MockMovementDriver` — updates state position/orientation; enforces max-per-request; checks GroundTruthMap for collision (→ failure notice + finish)
-14. `MockLidarSensor` — ray casting against GroundTruthMap:
-    - direction from (horizontal_angle, vertical_angle)
-    - step along ray from min_range to max_range in ground-truth voxel steps
-    - return distance on hit, -1 beyond range, -2 below min range
-    - FOV cone: only rays within FOV/2 of scan direction
-    - resolution interpolation: `res(d) = res1 + (d-dist1)*(res2-res1)/(dist2-dist1)`
+14. `MockLidarSensor` — **v2 replaces matrix model with circular beam model:**
+    - **Circle 0**: single beam along centre of scan direction
+    - **Circle N** (N=1..FOVC-1): ring of `4^N` beams evenly distributed around circumference at angular radius `N * atan(D / Z-min)` from centre
+    - Total beams = 1 + 4 + 16 + … + 4^(FOVC-1) = (4^FOVC − 1) / 3
+    - Cast each beam as a ray; step from 1 cm to Z-max
+    - **v2 result format:** sparse list of `{azimuth_3d, distance}` for each beam that hits; distance=0 if hit is within Z-min; list is empty if no beams hit anything
+    - Beams that miss (no hit within Z-max) are omitted from the result
+    - **Blind spots**: gaps between beams are real — the algorithm must actively map every required-resolution cell (no interpolation allowed per FAQ)
 
-**Milestone:** Unit test Lidar on one-wall room; verify correct distance returned.
+**Milestone:** Unit test Lidar on one-wall room; verify correct azimuth+distance returned.
 
 ### Phase 3 — Building Map (Drone's own map) ✅ COMPLETE
-15. `BuildingMapImpl` — sparse map with mission-boundary polygon check; coordinate-to-index using output resolution; `Get`/`Set` API
+15. `BuildingMapImpl` — sparse map with mission-boundary check; coordinate-to-index using output resolution; `Get`/`Set` API
+    - **v2 change:** boundary is a rectangle (xmin/xmax/ymin/ymax) instead of an arbitrary polygon; the existing polygon implementation handles this as a degenerate case and can be kept
 
 **Milestone:** Unit test bounds checking and round-trip Set/Get.
 
@@ -210,8 +225,9 @@ Create a class (e.g. `MappingAlgorithm`) that takes `Drone&` in its constructor
 and exposes a single `Run()` method. It calls the Drone API directly — no main-loop
 dispatch, no callbacks needed.
 
-19. Scan-and-update: call `drone.Scan()`, parse matrix, compute world hit positions,
-    call `drone.RecordCell()` for each hit
+19. Scan-and-update: call `drone.Scan()`, parse **v2 hit list** (azimuth+distance per hit),
+    compute world hit positions from azimuth angles + current heading,
+    call `drone.RecordCell()` for each hit; also record empty cells along each ray
 20. BFS frontier: `std::queue<GridCell3D>` of cells to visit; `visited` set
 21. XY-plane A* path planning on known-empty cells (query via `drone.QueryCell()`)
 22. Movement execution: split large moves into max-size chunks; rotate to face target
@@ -241,7 +257,7 @@ dispatch, no callbacks needed.
 32. Create three scenario folders with varied test cases:
     - `scenario1/` — simple rectangular room (baseline)
     - `scenario2/` — building with inaccessible rooms (drone can't enter, score < 100 naturally)
-    - `scenario3/` — non-rectangular boundary polygon (L-shape or irregular)
+    - `scenario3/` — non-square rectangular boundary with internal obstacles (v2: boundary is always a rectangle)
     Each with pre-run `original_output/output_map.txt` inside
 33. Add `mp-unit` usage explanation to `readme.txt` (required since it's an approved external library)
 34. (Bonus) GTest unit tests for ConfigParser, Lidar, BuildingMap, Scorer

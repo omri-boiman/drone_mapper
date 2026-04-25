@@ -6,27 +6,29 @@
 
 namespace drone {
 
-// One row of lidar distance readings (inner = horizontal cells)
-// Each value is a distance in cm, or:
-//   -1.0 : no element detected within effective scan range
-//   -2.0 : element detected below minimum scan distance
-using LidarRow    = std::vector<double>;
-using LidarMatrix = std::vector<LidarRow>;
-
-// Full result of a single Scan command
-struct LidarScanResult {
-    LidarMatrix cells;     // [row][col] — row = vertical cells, col = horizontal cells
-    Degrees     xy_angle;  // actual horizontal scan direction used
-    Degrees     pitch;     // actual vertical scan direction used
+// One lidar beam that hit an object within the scan range.
+// azimuth   — absolute horizontal angle of the beam (degrees, 0 = +X axis)
+// elevation — absolute vertical angle of the beam (degrees, 0 = horizontal)
+// distance  — cm to the hit surface; 0.0 means hit is within Z-min (too close
+//             to measure accurately)
+struct LidarBeamHit {
+    Degrees azimuth;
+    Degrees elevation;
+    double  distance;
 };
+
+// Sparse result of a single Scan: only beams that hit something are listed.
+// Empty vector means no beams detected anything within Z-max.
+using LidarScanResult = std::vector<LidarBeamHit>;
 
 class ILidarSensor {
 public:
     virtual ~ILidarSensor() = default;
 
-    // Scan in the given direction.
-    // xy_angle absent -> use current drone heading (0 offset).
-    // pitch absent    -> horizontal scan (0 deg).
+    // Fire the lidar in the given direction.
+    // xy_angle absent -> scan along current drone heading (0 offset).
+    // pitch    absent -> horizontal scan (0 deg).
+    // Returns the list of beams that hit something.
     virtual LidarScanResult Scan(
         std::optional<Degrees> xy_angle = std::nullopt,
         std::optional<Degrees> pitch    = std::nullopt) = 0;

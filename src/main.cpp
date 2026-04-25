@@ -135,7 +135,9 @@ int main(int argc, char* argv[])
     // -----------------------------------------------------------------------
     // 8. Compute and print score
     // -----------------------------------------------------------------------
-    const double score = drone::Scorer::ComputeScore(map, discoveredCells, parsedMap, outputBounds);
+    const double xyScale = std::pow(10.0, static_cast<double>(missionConfig.outputResXYDecimals));
+    const double hScale  = std::pow(10.0, static_cast<double>(missionConfig.outputResHDecimals));
+    const double score = drone::Scorer::ComputeScore(map, discoveredCells, parsedMap, outputBounds, xyScale, hScale);
     std::cout << "\nScore: " << score << "%\n";
 
     // -----------------------------------------------------------------------
