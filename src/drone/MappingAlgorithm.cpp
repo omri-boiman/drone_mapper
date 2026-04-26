@@ -60,56 +60,57 @@ void MappingAlgorithm::Run() {
     //    surfaces it would sample too sparsely at long range (far side walls).
     //    Assumption: the room is an enclosed box — valid per the mission spec.
     //    Out-of-bounds cells are silently rejected by the building map.
-    if (m_mission && !m_mission->boundaryPolygon.empty()) {
-        double bboxMinX =  1e9, bboxMaxX = -1e9;
-        double bboxMinY =  1e9, bboxMaxY = -1e9;
-        for (const auto& [px, py] : m_mission->boundaryPolygon) {
-            bboxMinX = std::min(bboxMinX, px);
-            bboxMaxX = std::max(bboxMaxX, px);
-            bboxMinY = std::min(bboxMinY, py);
-            bboxMaxY = std::max(bboxMaxY, py);
-        }
-        const double floorH   = static_cast<double>(m_minHeight);
-        const double ceilingH = static_cast<double>(m_maxHeight);
-
-        // Floor and ceiling: sweep all (x, y) at fixed h
-        for (double x = bboxMinX; x <= bboxMaxX + 0.5; x += 1.0) {
-            for (double y = bboxMinY; y <= bboxMaxY + 0.5; y += 1.0) {
-                m_drone.RecordCell(x * si::centi<si::metre>,
-                                   y * si::centi<si::metre>,
-                                   floorH * si::centi<si::metre>,
-                                   MapValue::Occupied);
-                m_drone.RecordCell(x * si::centi<si::metre>,
-                                   y * si::centi<si::metre>,
-                                   ceilingH * si::centi<si::metre>,
-                                   MapValue::Occupied);
-            }
-        }
-
-        // Four vertical walls: sweep all (y, h) at fixed x, and (x, h) at fixed y
-        for (double h = floorH; h <= ceilingH + 0.5; h += 1.0) {
-            for (double y = bboxMinY; y <= bboxMaxY + 0.5; y += 1.0) {
-                m_drone.RecordCell(bboxMinX * si::centi<si::metre>,
-                                   y        * si::centi<si::metre>,
-                                   h        * si::centi<si::metre>,
-                                   MapValue::Occupied);
-                m_drone.RecordCell(bboxMaxX * si::centi<si::metre>,
-                                   y        * si::centi<si::metre>,
-                                   h        * si::centi<si::metre>,
-                                   MapValue::Occupied);
-            }
-            for (double x = bboxMinX; x <= bboxMaxX + 0.5; x += 1.0) {
-                m_drone.RecordCell(x        * si::centi<si::metre>,
-                                   bboxMinY * si::centi<si::metre>,
-                                   h        * si::centi<si::metre>,
-                                   MapValue::Occupied);
-                m_drone.RecordCell(x        * si::centi<si::metre>,
-                                   bboxMaxY * si::centi<si::metre>,
-                                   h        * si::centi<si::metre>,
-                                   MapValue::Occupied);
-            }
-        }
-    }
+    //
+    // if (m_mission && !m_mission->boundaryPolygon.empty()) {
+    //     double bboxMinX =  1e9, bboxMaxX = -1e9;
+    //     double bboxMinY =  1e9, bboxMaxY = -1e9;
+    //     for (const auto& [px, py] : m_mission->boundaryPolygon) {
+    //         bboxMinX = std::min(bboxMinX, px);
+    //         bboxMaxX = std::max(bboxMaxX, px);
+    //         bboxMinY = std::min(bboxMinY, py);
+    //         bboxMaxY = std::max(bboxMaxY, py);
+    //     }
+    //     const double floorH   = static_cast<double>(m_minHeight);
+    //     const double ceilingH = static_cast<double>(m_maxHeight);
+    //
+    //     // Floor and ceiling: sweep all (x, y) at fixed h
+    //     for (double x = bboxMinX; x <= bboxMaxX + 0.5; x += 1.0) {
+    //         for (double y = bboxMinY; y <= bboxMaxY + 0.5; y += 1.0) {
+    //             m_drone.RecordCell(x * si::centi<si::metre>,
+    //                                y * si::centi<si::metre>,
+    //                                floorH * si::centi<si::metre>,
+    //                                MapValue::Occupied);
+    //             m_drone.RecordCell(x * si::centi<si::metre>,
+    //                                y * si::centi<si::metre>,
+    //                                ceilingH * si::centi<si::metre>,
+    //                                MapValue::Occupied);
+    //         }
+    //     }
+    //
+    //     // Four vertical walls: sweep all (y, h) at fixed x, and (x, h) at fixed y
+    //     for (double h = floorH; h <= ceilingH + 0.5; h += 1.0) {
+    //         for (double y = bboxMinY; y <= bboxMaxY + 0.5; y += 1.0) {
+    //             m_drone.RecordCell(bboxMinX * si::centi<si::metre>,
+    //                                y        * si::centi<si::metre>,
+    //                                h        * si::centi<si::metre>,
+    //                                MapValue::Occupied);
+    //             m_drone.RecordCell(bboxMaxX * si::centi<si::metre>,
+    //                                y        * si::centi<si::metre>,
+    //                                h        * si::centi<si::metre>,
+    //                                MapValue::Occupied);
+    //         }
+    //         for (double x = bboxMinX; x <= bboxMaxX + 0.5; x += 1.0) {
+    //             m_drone.RecordCell(x        * si::centi<si::metre>,
+    //                                bboxMinY * si::centi<si::metre>,
+    //                                h        * si::centi<si::metre>,
+    //                                MapValue::Occupied);
+    //             m_drone.RecordCell(x        * si::centi<si::metre>,
+    //                                bboxMaxY * si::centi<si::metre>,
+    //                                h        * si::centi<si::metre>,
+    //                                MapValue::Occupied);
+    //         }
+    //     }
+    // }
 
     // 1. Full 360° scan at the starting position.
     ScanAndUpdate();

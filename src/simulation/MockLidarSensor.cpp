@@ -85,9 +85,6 @@ LidarScanResult MockLidarSensor::Scan(std::optional<Degrees> xy_angle,
     const double D    = m_config.lidarD.numerical_value_in(si::centi<si::metre>);
     const int    fovc = m_config.lidarFovc;
 
-    // Angular step between consecutive circles = atan(D / Z-min)
-    const double angStep = std::atan(D / zmin);
-
     // 5. Drone origin
     const double ox = m_state->position.x.numerical_value_in(si::centi<si::metre>);
     const double oy = m_state->position.y.numerical_value_in(si::centi<si::metre>);
@@ -97,7 +94,8 @@ LidarScanResult MockLidarSensor::Scan(std::optional<Degrees> xy_angle,
     LidarScanResult hits;
 
     for (int circle = 0; circle < fovc; ++circle) {
-        const double theta    = circle * angStep;
+        // Circle N has radius N*D at Z-min, so theta = atan(N*D / Z-min)
+        const double theta    = std::atan(static_cast<double>(circle) * D / zmin);
         const int    numBeams = (circle == 0)
             ? 1
             : static_cast<int>(std::round(std::pow(4.0, circle)));
