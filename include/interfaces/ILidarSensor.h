@@ -7,13 +7,13 @@
 namespace drone {
 
 // One lidar beam that hit an object within the scan range.
-// azimuth   — absolute horizontal angle of the beam (degrees, 0 = +X axis)
-// elevation — absolute vertical angle of the beam (degrees, 0 = horizontal)
-// distance  — cm to the hit surface; 0.0 means hit is within Z-min (too close
-//             to measure accurately)
+// horizontal — relative horizontal angle of the beam (degrees, relative to drone heading)
+// altitude   — relative vertical angle of the beam (degrees, 0 = horizontal)
+// distance   — cm to the hit surface; 0.0 means hit is within Z-min (too close
+//              to measure accurately)
 struct LidarBeamHit {
-    Degrees azimuth;
-    Degrees elevation;
+    Degrees horizontal;
+    Degrees altitude;
     double  distance;
 };
 

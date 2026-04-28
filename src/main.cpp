@@ -126,7 +126,8 @@ int main(int argc, char* argv[])
     const drone::MapBounds outputBounds = parsedMap.bounds;
 
     const std::filesystem::path outputPath = ioPath / "map_output.txt";
-    if (!drone::WriteMapFile(outputPath, outputBounds, discoveredCells)) {
+    if (!drone::WriteMapFile(outputPath, outputBounds, discoveredCells,
+                             missionConfig.outputResXYCm, missionConfig.outputResHCm)) {
         std::cerr << "Failed to write output map to " << outputPath << "\n";
         return 1;
     }
@@ -135,8 +136,8 @@ int main(int argc, char* argv[])
     // -----------------------------------------------------------------------
     // 8. Compute and print score
     // -----------------------------------------------------------------------
-    const double xyScale = std::pow(10.0, static_cast<double>(missionConfig.outputResXYDecimals));
-    const double hScale  = std::pow(10.0, static_cast<double>(missionConfig.outputResHDecimals));
+    const double xyScale = 1.0 / missionConfig.outputResXYCm;
+    const double hScale  = 1.0 / missionConfig.outputResHCm;
     const double score = drone::Scorer::ComputeScore(map, discoveredCells, parsedMap, outputBounds, xyScale, hScale);
     std::cout << "\nScore: " << score << "%\n";
 

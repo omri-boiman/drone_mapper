@@ -25,17 +25,6 @@ bool GroundTruthMap::IsOccupied(Centi x, Centi y, Centi height) const
     return it->second == MapValue::Occupied;
 }
 
-bool GroundTruthMap::IsOccupiedCoarse(Centi x, Centi y, Centi height) const
-{
-    const auto it = m_cells.find(MakeKeyCoarse(
-        x.numerical_value_in(si::centi<si::metre>),
-        y.numerical_value_in(si::centi<si::metre>),
-        height.numerical_value_in(si::centi<si::metre>)
-    ));
-    if (it == m_cells.end()) return false;
-    return it->second == MapValue::Occupied;
-}
-
 MapValue GroundTruthMap::Query(Centi x, Centi y, Centi height) const
 {
     const auto it = m_cells.find(MakeKey(

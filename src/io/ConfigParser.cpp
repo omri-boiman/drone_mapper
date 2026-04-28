@@ -237,10 +237,8 @@ bool ParseMissionConfig(const std::filesystem::path& filePath,
     }
     out.minHeight           = GetCenti(kv, "min_height_cm",  out.minHeight,  f, logger);
     out.maxHeight           = GetCenti(kv, "max_height_cm",  out.maxHeight,  f, logger);
-    out.outputResXYDecimals = GetInt(kv, "output_resolution_xy_decimals",
-                                     out.outputResXYDecimals, f, logger);
-    out.outputResHDecimals  = GetInt(kv, "output_resolution_h_decimals",
-                                     out.outputResHDecimals,  f, logger);
+    out.outputResXYCm = GetDouble(kv, "output_resolution_xy_cm", out.outputResXYCm, f, logger);
+    out.outputResHCm  = GetDouble(kv, "output_resolution_h_cm",  out.outputResHCm,  f, logger);
     out.startX      = GetCenti(kv, "start_x_cm",      out.startX,      f, logger);
     out.startY      = GetCenti(kv, "start_y_cm",      out.startY,      f, logger);
     out.startHeight = GetCenti(kv, "start_height_cm", out.startHeight, f, logger);

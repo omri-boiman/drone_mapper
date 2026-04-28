@@ -26,9 +26,9 @@ MappingAlgorithm::MappingAlgorithm(Drone& drone, const DroneConfig* config,
             startPos.height.numerical_value_in(si::centi<si::metre>));
     }
 
-    // Set resolution based on output config or use default 1 cm
-    if (mission && mission->outputResXYDecimals >= 0) {
-        m_resolution = std::pow(10.0, -mission->outputResXYDecimals);
+    // Set resolution directly from mission config cell size
+    if (mission) {
+        m_resolution = mission->outputResXYCm;
     }
 
     // BFS step: one drone-advance-length in grid units.
@@ -175,9 +175,9 @@ void MappingAlgorithm::ScanAndUpdate() {
     }
 }
 
-// Single-direction lidar scan using the v2 circular beam model.
-// The result is a sparse hit list; azimuth and elevation are absolute angles,
-// so there is no need to reconstruct ray directions from matrix offsets.
+// Single-direction lidar scan using the professor's circular beam model.
+// Hits carry relative angles; we add the current heading to get absolute
+// world-frame direction before computing the Cartesian hit position.
 void MappingAlgorithm::ScanSingleDirection() {
     LidarScanResult hits = m_drone.Scan();
     Position3D dronePos = m_drone.GetLocation();
@@ -189,17 +189,18 @@ void MappingAlgorithm::ScanSingleDirection() {
     for (const auto& hit : hits) {
         if (hit.distance == 0.0) continue;  // within Z-min, position unknown
 
-        const double azRad = hit.azimuth.numerical_value_in(si::radian);
-        const double elRad = hit.elevation.numerical_value_in(si::radian);
+        const double absAzDeg = m_currentHeading + hit.horizontal.numerical_value_in(si::degree);
+        const double azRad    = absAzDeg * std::numbers::pi / 180.0;
+        const double elRad    = hit.altitude.numerical_value_in(si::radian);
 
         const double dx = std::cos(elRad) * std::cos(azRad);
         const double dy = std::cos(elRad) * std::sin(azRad);
         const double dz = std::sin(elRad);
 
-        // Snap to nearest cm so boundary check matches GroundTruthMap precision
-        const double hitX = std::round(droneX + hit.distance * dx);
-        const double hitY = std::round(droneY + hit.distance * dy);
-        const double hitZ = std::round(droneZ + hit.distance * dz);
+        // Floor to voxel index — consistent with GroundTruthMap's floor-based lookup
+        const double hitX = std::floor(droneX + hit.distance * dx);
+        const double hitY = std::floor(droneY + hit.distance * dy);
+        const double hitZ = std::floor(droneZ + hit.distance * dz);
 
         m_drone.RecordCell(hitX * si::centi<si::metre>,
                            hitY * si::centi<si::metre>,

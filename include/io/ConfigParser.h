@@ -50,9 +50,9 @@ struct MissionConfig {
     Centi minHeight {0.0   * si::centi<si::metre>};
     Centi maxHeight {300.0 * si::centi<si::metre>};
 
-    // Output map resolution (decimal places — dimensionless counts)
-    int outputResXYDecimals {2};
-    int outputResHDecimals  {2};
+    // Output map resolution — cell size in cm (e.g. 1.0 = 1 cm per cell)
+    double outputResXYCm {1.0};
+    double outputResHCm  {1.0};
 
     // Drone start position
     Centi startX      {0.0   * si::centi<si::metre>};

@@ -83,6 +83,21 @@ ParsedMap ParseMapFile(const std::filesystem::path& filePath,
             continue;
         }
 
+        // RESOLUTION XY <xy_cm> H <h_cm>
+        if (trimmed.rfind("RESOLUTION", 0) == 0) {
+            std::istringstream ss(trimmed.substr(10));
+            std::string xylabel, hlabel;
+            double xy{1.0}, h{1.0};
+            if (ss >> xylabel >> xy >> hlabel >> h) {
+                result.resolutionXY = xy;
+                result.resolutionH  = h;
+            } else {
+                logger.Log("map file line " + std::to_string(lineNum) +
+                           ": malformed RESOLUTION line — using defaults (1.0 cm)");
+            }
+            continue;
+        }
+
         // END
         if (trimmed == "END") {
             break;
@@ -159,7 +174,9 @@ ParsedMap ParseMapFile(const std::filesystem::path& filePath,
 
 bool WriteMapFile(const std::filesystem::path& filePath,
                   const MapBounds&              bounds,
-                  const std::vector<MapCell>&   cells)
+                  const std::vector<MapCell>&   cells,
+                  double                        resolutionXY,
+                  double                        resolutionH)
 {
     std::ofstream file(filePath);
     if (!file.is_open()) {
@@ -167,29 +184,41 @@ bool WriteMapFile(const std::filesystem::path& filePath,
         return false;
     }
 
-    file << std::fixed;
-    file.precision(2);
+    // Determine decimal places from resolution (e.g. 1.0->0, 0.1->1, 0.01->2)
+    auto decimals = [](double res) -> int {
+        if (res >= 1.0) return 0;
+        return static_cast<int>(std::ceil(-std::log10(res)));
+    };
+    const int dpXY = decimals(resolutionXY);
+    const int dpH  = decimals(resolutionH);
 
     const auto cm = [](Centi v) {
         return v.numerical_value_in(si::centi<si::metre>);
     };
 
-    file << "VERSION 1\n";
+    file << "VERSION 2\n";
+    file << std::fixed;
+    file.precision(6);
+    file << "RESOLUTION XY " << resolutionXY << " H " << resolutionH << "\n";
+
+    file.precision(dpXY);
     file << "BOUNDS"
          << " xmin=" << cm(bounds.xmin) << " xmax=" << cm(bounds.xmax)
-         << " ymin=" << cm(bounds.ymin) << " ymax=" << cm(bounds.ymax)
-         << " hmin=" << cm(bounds.hmin) << " hmax=" << cm(bounds.hmax)
+         << " ymin=" << cm(bounds.ymin) << " ymax=" << cm(bounds.ymax);
+    file.precision(dpH);
+    file << " hmin=" << cm(bounds.hmin) << " hmax=" << cm(bounds.hmax)
          << "\n";
 
     for (const auto& cell : cells) {
+        file.precision(dpXY);
         file << "CELL "
-             << cm(cell.x)      << " "
-             << cm(cell.y)      << " "
-             << cm(cell.height) << " "
+             << cm(cell.x) << " "
+             << cm(cell.y) << " ";
+        file.precision(dpH);
+        file << cm(cell.height) << " "
              << MapValueToInt(cell.value) << "\n";
     }
 
-    file << "END\n";
     return true;
 }
 

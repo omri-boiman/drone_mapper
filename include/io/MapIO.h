@@ -28,6 +28,8 @@ struct ParsedMap {
     bool             valid{false};   // false if the file could not be read at all
     MapBounds        bounds;
     std::vector<MapCell> cells;
+    double           resolutionXY {1.0};  // cell size in cm, from RESOLUTION header
+    double           resolutionH  {1.0};
 };
 
 // Parse <path>/map_input.txt (or any file in the CELL format).
@@ -40,6 +42,8 @@ ParsedMap ParseMapFile(const std::filesystem::path& filePath,
 // Returns false if the file could not be opened.
 bool WriteMapFile(const std::filesystem::path& filePath,
                   const MapBounds&              bounds,
-                  const std::vector<MapCell>&   cells);
+                  const std::vector<MapCell>&   cells,
+                  double                        resolutionXY,
+                  double                        resolutionH);
 
 } // namespace drone

@@ -21,17 +21,19 @@ double MockLidarSensor::CastRay(double originX, double originY, double originH,
     const double minRange = m_config.lidarMinRange.numerical_value_in(si::centi<si::metre>);
     const double maxRange = m_config.lidarMaxRange.numerical_value_in(si::centi<si::metre>);
 
-    const int maxSteps = static_cast<int>(maxRange) + 1;
+    const double step     = 0.1;
+    const int    maxSteps = static_cast<int>(maxRange / step) + 1;
+
     for (int t = 1; t <= maxSteps; ++t) {
-        const double cx = originX + t * dx;
-        const double cy = originY + t * dy;
-        const double ch = originH + t * dz;
+        const double dist = t * step;
+        const double cx = originX + dist * dx;
+        const double cy = originY + dist * dy;
+        const double ch = originH + dist * dz;
 
         if (m_groundTruth.IsOccupied(
                 cx * si::centi<si::metre>,
                 cy * si::centi<si::metre>,
                 ch * si::centi<si::metre>)) {
-            const double dist = static_cast<double>(t);
             if (dist < minRange) return -2.0;
             if (dist > maxRange) return -1.0;
             return dist;
@@ -45,85 +47,51 @@ double MockLidarSensor::CastRay(double originX, double originY, double originH,
 LidarScanResult MockLidarSensor::Scan(std::optional<Degrees> xy_angle,
                                        std::optional<Degrees> pitch)
 {
-    // 1. Resolve absolute scan direction
     const double headingDeg  = m_state->orientation.heading.numerical_value_in(si::degree);
-    const double xyOffsetDeg = xy_angle.has_value()
-        ? xy_angle->numerical_value_in(si::degree) : 0.0;
-    const double azimuthDeg  = headingDeg + xyOffsetDeg;
-    const double azimuthRad  = azimuthDeg * std::numbers::pi / 180.0;
+    const double relHorizDeg = xy_angle.has_value() ? xy_angle->numerical_value_in(si::degree) : 0.0;
+    const double relAltDeg   = pitch.has_value()    ? pitch->numerical_value_in(si::degree)    : 0.0;
 
-    const double pitchDeg = pitch.has_value()
-        ? pitch->numerical_value_in(si::degree) : 0.0;
-    const double pitchRad = pitchDeg * std::numbers::pi / 180.0;
-
-    // 2. Central beam unit vector  (cx, cy, cz)
-    const double cosPitch = std::cos(pitchRad);
-    const double sinPitch = std::sin(pitchRad);
-    const double cosAz    = std::cos(azimuthRad);
-    const double sinAz    = std::sin(azimuthRad);
-
-    const double cx = cosPitch * cosAz;
-    const double cy = cosPitch * sinAz;
-    const double cz = sinPitch;
-
-    // 3. Two orthogonal vectors in the plane perpendicular to central direction.
-    //    u = horizontal perpendicular; w = central × u.
-    double ux, uy, uz;
-    if (std::abs(cz) < 0.9) {
-        const double len = std::sqrt(cx * cx + cy * cy);
-        ux = -cy / len;  uy = cx / len;  uz = 0.0;
-    } else {
-        // Near-vertical scan: anchor to +X to avoid degeneracy
-        ux = 1.0;  uy = 0.0;  uz = 0.0;
-    }
-    const double wx = cy * uz - cz * uy;
-    const double wy = cz * ux - cx * uz;
-    const double wz = cx * uy - cy * ux;
-
-    // 4. Lidar parameters
     const double zmin = m_config.lidarMinRange.numerical_value_in(si::centi<si::metre>);
     const double D    = m_config.lidarD.numerical_value_in(si::centi<si::metre>);
     const int    fovc = m_config.lidarFovc;
 
-    // 5. Drone origin
     const double ox = m_state->position.x.numerical_value_in(si::centi<si::metre>);
     const double oy = m_state->position.y.numerical_value_in(si::centi<si::metre>);
     const double oh = m_state->position.height.numerical_value_in(si::centi<si::metre>);
 
-    // 6. Emit beams circle by circle
     LidarScanResult hits;
 
     for (int circle = 0; circle < fovc; ++circle) {
-        // Circle N has radius N*D at Z-min, so theta = atan(N*D / Z-min)
-        const double theta    = std::atan(static_cast<double>(circle) * D / zmin);
-        const int    numBeams = (circle == 0)
-            ? 1
-            : static_cast<int>(std::round(std::pow(4.0, circle)));
+        const int    numBeams = (circle == 0) ? 1 : static_cast<int>(std::round(std::pow(4.0, circle)));
+        const double radius   = static_cast<double>(circle) * D;
 
         for (int beam = 0; beam < numBeams; ++beam) {
             const double phi = (numBeams > 1)
                 ? (2.0 * std::numbers::pi * beam / numBeams)
                 : 0.0;
 
-            // Beam direction: rotate central by theta around axis at azimuth phi
-            const double sinTheta = std::sin(theta);
-            const double cosTheta = std::cos(theta);
+            // Professor's 2D angle-space formula
+            const double horizOffset  = radius * std::cos(phi);
+            const double altOffset    = radius * std::sin(phi);
+            const double horizDeltaDeg = std::atan2(horizOffset, zmin) * (180.0 / std::numbers::pi);
+            const double altDeltaDeg   = std::atan2(altOffset,   zmin) * (180.0 / std::numbers::pi);
 
-            const double bx = cosTheta * cx + sinTheta * (std::cos(phi) * ux + std::sin(phi) * wx);
-            const double by = cosTheta * cy + sinTheta * (std::cos(phi) * uy + std::sin(phi) * wy);
-            const double bz = cosTheta * cz + sinTheta * (std::cos(phi) * uz + std::sin(phi) * wz);
+            // Absolute direction for ray tracing through the map
+            const double absHorizRad = (headingDeg + relHorizDeg + horizDeltaDeg) * std::numbers::pi / 180.0;
+            const double absAltRad   = (relAltDeg  + altDeltaDeg)                 * std::numbers::pi / 180.0;
 
-            const double dist = CastRay(ox, oy, oh, bx, by, bz);
-            if (dist == -1.0) continue;  // no hit within Z-max
+            const double cosAlt = std::cos(absAltRad);
+            const double dx = cosAlt * std::cos(absHorizRad);
+            const double dy = cosAlt * std::sin(absHorizRad);
+            const double dz = std::sin(absAltRad);
 
-            // Absolute azimuth and elevation of this beam
-            const double beamAz = std::atan2(by, bx);
-            const double beamEl = std::atan2(bz, std::sqrt(bx * bx + by * by));
+            const double dist = CastRay(ox, oy, oh, dx, dy, dz);
+            if (dist == -1.0) continue;
 
             hits.push_back({
-                beamAz * (180.0 / std::numbers::pi) * si::degree,
-                beamEl * (180.0 / std::numbers::pi) * si::degree,
-                (dist == -2.0) ? 0.0 : dist  // 0.0 = within Z-min
+                (relHorizDeg + horizDeltaDeg) * si::degree,
+                (relAltDeg   + altDeltaDeg)   * si::degree,
+                (dist == -2.0) ? 0.0 : dist
             });
         }
     }

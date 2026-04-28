@@ -9,13 +9,15 @@
 namespace drone {
 
 // ---------------------------------------------------------------------------
-// MockLidarSensor — v2 circular beam model
+// MockLidarSensor — professor's circular beam model
 //
-// The lidar emits beams arranged in concentric circles around the scan centre:
+// Beams are arranged in concentric circles around the scan centre:
 //   Circle 0 : 1 beam (centre)
-//   Circle N : 4^N beams, angular radius = N * atan(D / Z-min) from centre
-//              beams are evenly distributed around the circumference
+//   Circle N : 4^N beams; radius at Z-min = N*D; angles computed via atan2
+//              (professor's 2D angle-space formula)
 //
+// Returns RELATIVE angles (relative to drone heading).
+// The drone adds its heading to reconstruct absolute world-frame direction.
 // Only beams that hit something within [Z-min, Z-max] appear in the result.
 // A hit within Z-min is included with distance=0 (too close to measure).
 // ---------------------------------------------------------------------------

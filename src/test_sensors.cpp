@@ -185,11 +185,11 @@ static void TestLidarSensor()
 
     Check("Scan returns some hits", !result.empty());
 
-    // The centre beam (azimuth≈0°, elevation≈0°) must hit the wall at ~200 cm
+    // The centre beam (horizontal≈0°, altitude≈0°) must hit the wall at ~200 cm
     bool foundCentreHit = false;
     for (const auto& hit : result) {
-        const double az = hit.azimuth.numerical_value_in(si::degree);
-        const double el = hit.elevation.numerical_value_in(si::degree);
+        const double az = hit.horizontal.numerical_value_in(si::degree);
+        const double el = hit.altitude.numerical_value_in(si::degree);
         if (std::abs(az) < 5.0 && std::abs(el) < 5.0 &&
             hit.distance >= 195.0 && hit.distance <= 205.0) {
             foundCentreHit = true;
@@ -212,8 +212,8 @@ static void TestBuildingMap()
     mc.boundaryPolygon   = { {0,0}, {500,0}, {500,500}, {0,500} };
     mc.minHeight = 0.0   * si::centi<si::metre>;
     mc.maxHeight = 300.0 * si::centi<si::metre>;
-    mc.outputResXYDecimals = 2;
-    mc.outputResHDecimals  = 2;
+    mc.outputResXYCm = 1.0;
+    mc.outputResHCm  = 1.0;
 
     BuildingMapImpl map(mc);
 
@@ -284,8 +284,8 @@ static void TestDrone()
     mc.boundaryPolygon  = { {0,0}, {500,0}, {500,500}, {0,500} };
     mc.minHeight        = 0.0   * si::centi<si::metre>;
     mc.maxHeight        = 300.0 * si::centi<si::metre>;
-    mc.outputResXYDecimals = 2;
-    mc.outputResHDecimals  = 2;
+    mc.outputResXYCm = 1.0;
+    mc.outputResHCm  = 1.0;
     BuildingMapImpl buildingMap(mc);
 
     Drone drone(lidar, posSensor, driver, buildingMap);
@@ -337,8 +337,8 @@ static void TestDrone()
     Check("Scan returns some hits", !scan.empty());
     bool foundWallHit = false;
     for (const auto& hit : scan) {
-        const double az = hit.azimuth.numerical_value_in(si::degree);
-        const double el = hit.elevation.numerical_value_in(si::degree);
+        const double az = hit.horizontal.numerical_value_in(si::degree);
+        const double el = hit.altitude.numerical_value_in(si::degree);
         if (std::abs(az) < 5.0 && std::abs(el) < 5.0 &&
             hit.distance >= 95.0 && hit.distance <= 105.0) {
             foundWallHit = true;

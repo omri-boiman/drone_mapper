@@ -124,50 +124,55 @@ Use C++20 (not C++23). Avoid C++23-only features. Key C++20 features available:
 
 ## File Formats (our choices for Ex1)
 
+> Full format specification is in `file_formats.md`.
+
 ### drone_config.txt
 ```
-min_pass_width_cm = 60
+min_pass_width_cm  = 60
 min_pass_length_cm = 60
 min_pass_height_cm = 120
-# Lidar — v2 circular beam model:
-lidar_zmin_cm = 20           # min operational distance; hit reported as distance=0 below this
-lidar_zmax_cm = 1000         # max operational distance; no detection beyond this
-lidar_D_cm = 5               # spacing between consecutive beam circles at Z-min distance
-                             # (circle 1 radius = D, circle 2 radius = 2D, etc.)
-lidar_fovc = 5               # number of beam circles (0=centre only; N circles → 1+4+16+…+4^N beams)
-max_rotate_deg = 45
-max_advance_cm = 50
-max_elevate_cm = 30
-# v1 fields kept for backward-compat parsing (ignored if lidar_fovc present):
-# lidar_fov_deg, lidar_res_at_dist1_cm, lidar_dist1_cm, lidar_res_at_dist2_cm, lidar_dist2_cm
+lidar_min_range_cm = 20
+lidar_max_range_cm = 1000
+lidar_D_cm         = 5
+lidar_fovc         = 5
+max_rotate_deg     = 45
+max_advance_cm     = 50
+max_elevate_cm     = 30
 ```
 
 ### mission_config.txt
 ```
-# v2: boundary is a simple rectangle (replaces v1 polygon)
 boundary_xmin_cm = 0
 boundary_xmax_cm = 2000
 boundary_ymin_cm = 0
 boundary_ymax_cm = 1500
-min_height_cm = 0
-max_height_cm = 300
-output_resolution_xy_decimals = 2
-output_resolution_h_decimals = 2
-start_x_cm = 100
-start_y_cm = 100
+min_height_cm    = 0
+max_height_cm    = 300
+output_resolution_xy_cm = 1.0   # cell size in cm — must match map_input.txt
+output_resolution_h_cm  = 1.0
+start_x_cm      = 100
+start_y_cm      = 100
 start_height_cm = 150
 ```
 
-### map_input.txt / map_output.txt (identical format)
+### map_input.txt and map_output.txt (identical format)
+Both files embed their resolution so they are self-describing.
+The resolution in both files must match `output_resolution_xy_cm` from mission_config.txt.
+
 ```
-VERSION 1
-BOUNDS xmin=0.00 xmax=20.00 ymin=0.00 ymax=15.00 hmin=0.00 hmax=3.00
-# Only occupied cells stored (value=1). Absent cells = not mapped.
+VERSION 2
+RESOLUTION XY <xy_cm> H <h_cm>
+BOUNDS xmin=<v> xmax=<v> ymin=<v> ymax=<v> hmin=<v> hmax=<v>   # input only
 CELL <x_cm> <y_cm> <h_cm> <value>
-CELL 10.00 0.00 150.00 1
 ...
-END
 ```
+
+**map_input.txt rule:** wall cells must be placed at every resolution-sized step across
+every surface — no gaps. This ensures the lidar ray (stepping 1 cm at a time) always
+lands on an occupied cell when it hits a wall. The map generator enforces this.
+
+**map_output.txt:** contains only cells the drone recorded (Occupied=1 or Empty=0).
+Absent cells = NotMapped. Beyond-boundary cells are never written.
 
 ---
 

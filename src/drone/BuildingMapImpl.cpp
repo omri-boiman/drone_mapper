@@ -13,8 +13,8 @@ BuildingMapImpl::BuildingMapImpl(const MissionConfig& mission)
     , m_minHeight(mission.minHeight)
     , m_maxHeight(mission.maxHeight)
 {
-    m_xyScale = std::pow(10.0, static_cast<double>(mission.outputResXYDecimals));
-    m_hScale  = std::pow(10.0, static_cast<double>(mission.outputResHDecimals));
+    m_xyScale = 1.0 / mission.outputResXYCm;
+    m_hScale  = 1.0 / mission.outputResHCm;
 
     // Detect axis-aligned rectangle: 4 vertices where every x is xmin or xmax
     // and every y is ymin or ymax.  Ray-casting misses points on the far edges
