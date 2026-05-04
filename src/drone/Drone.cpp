@@ -2,10 +2,6 @@
 
 namespace drone {
 
-// ---------------------------------------------------------------------------
-// Construction
-// ---------------------------------------------------------------------------
-
 Drone::Drone(ILidarSensor&    lidar,
              IPositionSensor& position,
              IMovementDriver& driver,
@@ -16,52 +12,28 @@ Drone::Drone(ILidarSensor&    lidar,
     , m_map(map)
 {}
 
-// ---------------------------------------------------------------------------
-// Movement — delegate directly to the movement driver
-// ---------------------------------------------------------------------------
+MoveResult Drone::Rotate(HorizontalAngle angle)  { return m_driver.Rotate(angle); }
+MoveResult Drone::Advance(PhysicalLength distance) { return m_driver.Advance(distance); }
+MoveResult Drone::Elevate(PhysicalLength distance) { return m_driver.Elevate(distance); }
 
-MoveResult Drone::Rotate(Degrees angle)
+ScanResults Drone::Scan(Orientation scan_orientation)
 {
-    return m_driver.Rotate(angle);
-}
-
-MoveResult Drone::Advance(Centi distance)
-{
-    return m_driver.Advance(distance);
-}
-
-MoveResult Drone::Elevate(Centi distance)
-{
-    return m_driver.Elevate(distance);
-}
-
-// ---------------------------------------------------------------------------
-// Sensing — delegate directly to the sensors
-// ---------------------------------------------------------------------------
-
-LidarScanResult Drone::Scan(std::optional<Degrees> xy_angle,
-                             std::optional<Degrees> pitch)
-{
-    return m_lidar.Scan(xy_angle, pitch);
+    return m_lidar.scan(scan_orientation);
 }
 
 Position3D Drone::GetLocation() const
 {
-    return m_position.GetPosition();
+    return m_position.position();
 }
 
-// ---------------------------------------------------------------------------
-// Map — delegate directly to the building map
-// ---------------------------------------------------------------------------
-
-void Drone::RecordCell(Centi x, Centi y, Centi height, MapValue value)
+void Drone::RecordCell(XLength x, YLength y, ZLength z, MapValue value)
 {
-    m_map.Set(x, y, height, value);
+    m_map.Set(x, y, z, value);
 }
 
-MapValue Drone::QueryCell(Centi x, Centi y, Centi height) const
+MapValue Drone::QueryCell(XLength x, YLength y, ZLength z) const
 {
-    return m_map.Get(x, y, height);
+    return m_map.Get(x, y, z);
 }
 
 } // namespace drone

@@ -12,8 +12,8 @@ namespace drone {
 // read from it.  All three hold a shared_ptr<SimulationState>.
 // ---------------------------------------------------------------------------
 struct SimulationState {
-    Position3D  position;     // current drone position in cm
-    Orientation orientation;  // heading (0-360 deg, clockwise from +X) and pitch
+    Position3D  position;
+    Orientation orientation;
 };
 
 } // namespace drone

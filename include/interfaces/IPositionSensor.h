@@ -8,8 +8,8 @@ class IPositionSensor {
 public:
     virtual ~IPositionSensor() = default;
 
-    // Returns the drone's exact current position
-    virtual Position3D GetPosition() const = 0;
+    [[nodiscard]] virtual Position3D  position() const = 0;
+    [[nodiscard]] virtual Orientation heading()  const = 0;
 };
 
 } // namespace drone

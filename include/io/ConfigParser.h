@@ -2,74 +2,46 @@
 
 #include <filesystem>
 #include <vector>
-#include <utility>   // std::pair
+#include <utility>
 #include "io/ErrorLogger.h"
 #include "types/Units.h"
 
 namespace drone {
 
-// ---------------------------------------------------------------------------
-// DroneConfig — capabilities loaded from drone_config.txt
-// ---------------------------------------------------------------------------
 struct DroneConfig {
-    // Minimum passage dimensions the drone will attempt to enter
-    Centi   minPassWidth  {60.0  * si::centi<si::metre>};
-    Centi   minPassLength {60.0  * si::centi<si::metre>};
-    Centi   minPassHeight {120.0 * si::centi<si::metre>};
+    PhysicalLength minPassWidth  {60.0  * cm};
+    PhysicalLength minPassLength {60.0  * cm};
+    PhysicalLength minPassHeight {120.0 * cm};
 
-    // Lidar field of view (full cone angle) and scan range
-    Degrees lidarFov      {90.0   * si::degree};
-    Centi   lidarMinRange {20.0   * si::centi<si::metre>};
-    Centi   lidarMaxRange {1000.0 * si::centi<si::metre>};
+    // Professor's LidarConfig fields
+    PhysicalLength lidarBeamMin      {20.0   * cm};
+    PhysicalLength lidarBeamMax      {1000.0 * cm};
+    PhysicalLength lidarCircleSpacing{10.0   * cm};
+    std::size_t    lidarFovCircles   {3};
 
-    // Lidar resolution calibration: cell side length at two reference distances
-    Centi   lidarResAtDist1 {5.0   * si::centi<si::metre>};
-    Centi   lidarDist1      {100.0 * si::centi<si::metre>};
-    Centi   lidarResAtDist2 {20.0  * si::centi<si::metre>};
-    Centi   lidarDist2      {800.0 * si::centi<si::metre>};
-
-    // Maximum movement per single command
-    Degrees maxRotate {45.0 * si::degree};
-    Centi   maxAdvance{50.0 * si::centi<si::metre>};
-    Centi   maxElevate{30.0 * si::centi<si::metre>};
+    HorizontalAngle maxRotate  {45.0 * deg};
+    PhysicalLength  maxAdvance {50.0 * cm};
+    PhysicalLength  maxElevate {30.0 * cm};
 };
 
-// ---------------------------------------------------------------------------
-// MissionConfig — per-mission settings loaded from mission_config.txt
-// ---------------------------------------------------------------------------
 struct MissionConfig {
-    // Boundary polygon as a list of (x, y) vertices in cm.
-    // Stored as raw doubles for use in the geometric ray-casting algorithm.
     std::vector<std::pair<double, double>> boundaryPolygon;
 
-    // Height limits
-    Centi minHeight {0.0   * si::centi<si::metre>};
-    Centi maxHeight {300.0 * si::centi<si::metre>};
+    ZLength minHeight {0.0   * cm};
+    ZLength maxHeight {300.0 * cm};
 
-    // Output map resolution (decimal places — dimensionless counts)
-    int outputResXYDecimals {2};
-    int outputResHDecimals  {2};
+    double outputResXYCm {1.0};
+    double outputResHCm  {1.0};
 
-    // Drone start position
-    Centi startX      {0.0   * si::centi<si::metre>};
-    Centi startY      {0.0   * si::centi<si::metre>};
-    Centi startHeight {150.0 * si::centi<si::metre>};
+    XLength startX      {0.0   * cm};
+    YLength startY      {0.0   * cm};
+    ZLength startHeight {150.0 * cm};
 };
 
-// ---------------------------------------------------------------------------
-// Parsing functions
-// ---------------------------------------------------------------------------
-
-// Parse drone_config.txt from filePath.
-// Missing or malformed keys are replaced by defaults and logged.
-// Returns false only if the file cannot be opened (unrecoverable).
 bool ParseDroneConfig(const std::filesystem::path& filePath,
                       DroneConfig&                 out,
                       ErrorLogger&                 logger);
 
-// Parse mission_config.txt from filePath.
-// Missing or malformed keys are replaced by defaults and logged.
-// Returns false only if the file cannot be opened (unrecoverable).
 bool ParseMissionConfig(const std::filesystem::path& filePath,
                         MissionConfig&               out,
                         ErrorLogger&                 logger);

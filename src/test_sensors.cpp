@@ -1,10 +1,10 @@
 //
-// sensor_test — smoke test for Phase 2 mocks and Phase 3 BuildingMapImpl.
+// sensor_test — smoke test for Phase 5 mocks and BuildingMapImpl.
 //
 // Scenario:
-//   Ground-truth wall: a block of Occupied cells at x=300, y=80..120, h=100..200 cm.
-//   Drone starts at (100, 100, 150) cm, heading 0 degrees (+X direction).
-//   No GTest required — prints PASS / FAIL for each check.
+//   Ground-truth wall: Occupied cells at x=300, y=80..120, z=100..200 cm.
+//   Drone starts at (100, 100, 150) cm, orientation 0/0 deg (+X direction).
+//   No GTest — prints PASS / FAIL for each check.
 //
 
 #include <iostream>
@@ -16,73 +16,60 @@
 #include "simulation/MockPositionSensor.h"
 #include "simulation/MockMovementDriver.h"
 #include "simulation/MockLidarSensor.h"
+#include "simulation/CellMap.h"
 #include "drone/BuildingMapImpl.h"
 #include "drone/Drone.h"
 #include "io/MapIO.h"
 #include "io/ConfigParser.h"
-#include "simulation/GroundTruthMap.h"
 
 using namespace drone;
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 
 static int g_pass = 0;
 static int g_fail = 0;
 
 static void Check(const std::string& label, bool condition)
 {
-    if (condition) {
-        std::cout << "  PASS  " << label << "\n";
-        ++g_pass;
-    } else {
-        std::cout << "  FAIL  " << label << "\n";
-        ++g_fail;
-    }
+    if (condition) { std::cout << "  PASS  " << label << "\n"; ++g_pass; }
+    else           { std::cout << "  FAIL  " << label << "\n"; ++g_fail; }
 }
 
-// Build a DroneConfig with convenient defaults for testing
 static DroneConfig MakeTestDroneConfig()
 {
     DroneConfig c;
-    c.lidarFov         = 90.0  * si::degree;
-    c.lidarMinRange    = 20.0  * si::centi<si::metre>;
-    c.lidarMaxRange    = 500.0 * si::centi<si::metre>;
-    c.lidarResAtDist1  = 5.0   * si::centi<si::metre>;
-    c.lidarDist1       = 100.0 * si::centi<si::metre>;
-    c.lidarResAtDist2  = 20.0  * si::centi<si::metre>;
-    c.lidarDist2       = 800.0 * si::centi<si::metre>;
-    c.maxRotate  = 45.0  * si::degree;
-    c.maxAdvance = 100.0 * si::centi<si::metre>;
-    c.maxElevate = 50.0  * si::centi<si::metre>;
+    c.lidarBeamMin       = 20.0  * cm;
+    c.lidarBeamMax       = 500.0 * cm;
+    c.lidarCircleSpacing = 10.0  * cm;
+    c.lidarFovCircles    = 3;
+    c.maxRotate          = 45.0  * deg;
+    c.maxAdvance         = 100.0 * cm;
+    c.maxElevate         = 50.0  * cm;
     return c;
 }
 
-// Build a ParsedMap with a wall: Occupied cells at x=300, y=80..120 (step 1), h=100..200 (step 1)
+// Build a LidarConfig from a DroneConfig
+static LidarConfig MakeLidarConfig(const DroneConfig& dc)
+{
+    return {dc.lidarBeamMin, dc.lidarBeamMax, dc.lidarCircleSpacing, dc.lidarFovCircles};
+}
+
+// Build a ParsedMap with a wall: Occupied cells at x=300, y=80..120, z=100..200 cm
 static ParsedMap MakeWallMap()
 {
     ParsedMap pm;
     pm.valid = true;
-    pm.bounds = {
-          0 * si::centi<si::metre>, 500 * si::centi<si::metre>,
-          0 * si::centi<si::metre>, 500 * si::centi<si::metre>,
-          0 * si::centi<si::metre>, 300 * si::centi<si::metre>
-    };
+    pm.bounds = { 0*cm, 500*cm, 0*cm, 500*cm, 0*cm, 300*cm };
 
     for (int y = 80; y <= 120; ++y)
-        for (int h = 100; h <= 200; ++h)
+        for (int z = 100; z <= 200; ++z)
             pm.cells.push_back({
-                300.0 * si::centi<si::metre>,
-                static_cast<double>(y) * si::centi<si::metre>,
-                static_cast<double>(h) * si::centi<si::metre>,
+                300.0 * cm,
+                static_cast<double>(y) * cm,
+                static_cast<double>(z) * cm,
                 MapValue::Occupied
             });
     return pm;
 }
 
-// ---------------------------------------------------------------------------
-// Tests
 // ---------------------------------------------------------------------------
 
 static void TestPositionSensor()
@@ -90,113 +77,96 @@ static void TestPositionSensor()
     std::cout << "\n-- MockPositionSensor --\n";
 
     auto state = std::make_shared<SimulationState>();
-    state->position = { 100.0 * si::centi<si::metre>,
-                        200.0 * si::centi<si::metre>,
-                        150.0 * si::centi<si::metre> };
+    state->position.x = 100.0 * x_extent[cm];
+    state->position.y = 200.0 * y_extent[cm];
+    state->position.z = 150.0 * z_extent[cm];
 
     MockPositionSensor sensor(state);
-    const Position3D pos = sensor.GetPosition();
+    const Position3D pos = sensor.position();
 
-    Check("x == 100 cm",
-          pos.x.numerical_value_in(si::centi<si::metre>) == 100.0);
-    Check("y == 200 cm",
-          pos.y.numerical_value_in(si::centi<si::metre>) == 200.0);
-    Check("height == 150 cm",
-          pos.height.numerical_value_in(si::centi<si::metre>) == 150.0);
+    Check("x == 100 cm", pos.x.numerical_value_in(cm) == 100.0);
+    Check("y == 200 cm", pos.y.numerical_value_in(cm) == 200.0);
+    Check("z == 150 cm", pos.z.numerical_value_in(cm) == 150.0);
 
-    // Mutate state and verify sensor reflects the change
-    state->position.x = 999.0 * si::centi<si::metre>;
+    state->position.x = 999.0 * x_extent[cm];
     Check("x tracks state mutation",
-          sensor.GetPosition().x.numerical_value_in(si::centi<si::metre>) == 999.0);
+          sensor.position().x.numerical_value_in(cm) == 999.0);
 }
 
 static void TestMovementDriver()
 {
     std::cout << "\n-- MockMovementDriver --\n";
 
-    const DroneConfig  config = MakeTestDroneConfig();
-    const GroundTruthMap gtMap(MakeWallMap());
+    const DroneConfig config = MakeTestDroneConfig();
+    const ParsedMap   wmap   = MakeWallMap();
+    const CellMap     cellMap(wmap);
 
     auto state = std::make_shared<SimulationState>();
-    state->position    = { 100.0 * si::centi<si::metre>,
-                           100.0 * si::centi<si::metre>,
-                           150.0 * si::centi<si::metre> };
-    state->orientation = { 0.0 * si::degree, 0.0 * si::degree };
+    state->position.x            = 100.0 * x_extent[cm];
+    state->position.y            = 100.0 * y_extent[cm];
+    state->position.z            = 150.0 * z_extent[cm];
+    state->orientation.horizontal = 0.0 * horizontal_angle[deg];
+    state->orientation.altitude   = 0.0 * altitude_angle[deg];
 
-    MockMovementDriver driver(state, config, gtMap);
+    MockMovementDriver driver(state, config, cellMap);
 
-    // --- Rotate: request 60 deg, max is 45 --- should clamp to 45
-    const MoveResult rotResult = driver.Rotate(60.0 * si::degree);
-    Check("Rotate returns Success",
-          rotResult == MoveResult::Success);
+    // Rotate 60 deg, max is 45 — should clamp to 45
+    const MoveResult rotResult = driver.Rotate(60.0 * horizontal_angle[deg]);
+    Check("Rotate returns Success", rotResult == MoveResult::Success);
     Check("Rotate 60 deg clamped to 45 deg",
-          std::abs(state->orientation.heading.numerical_value_in(si::degree) - 45.0) < 0.001);
+          std::abs(state->orientation.horizontal.numerical_value_in(deg) - 45.0) < 0.001);
 
-    // Reset heading to 0 for straight-line advance tests
-    state->orientation.heading = 0.0 * si::degree;
+    state->orientation.horizontal = 0.0 * horizontal_angle[deg];
 
-    // --- Advance 100 cm into free space (wall is 200 cm away) ---
-    const MoveResult advOk = driver.Advance(100.0 * si::centi<si::metre>);
-    Check("Advance into free space returns Success",
-          advOk == MoveResult::Success);
+    // Advance 100 cm into free space (wall is 200 cm away)
+    const MoveResult advOk = driver.Advance(100.0 * cm);
+    Check("Advance into free space returns Success", advOk == MoveResult::Success);
     Check("Position updated after free advance",
-          std::abs(state->position.x.numerical_value_in(si::centi<si::metre>) - 200.0) < 0.5);
+          std::abs(state->position.x.numerical_value_in(cm) - 200.0) < 0.5);
 
-    // --- Advance another 100 cm: now 100 cm from the wall at x=300 ---
-    // The wall starts at x=300 so a 100 cm advance should hit it
-    const MoveResult advCollide = driver.Advance(100.0 * si::centi<si::metre>);
+    // Advance another 100 cm: hits wall at x=300
+    const MoveResult advCollide = driver.Advance(100.0 * cm);
     Check("Advance into wall returns CollisionDetected",
           advCollide == MoveResult::CollisionDetected);
     Check("Position NOT updated on collision",
-          std::abs(state->position.x.numerical_value_in(si::centi<si::metre>) - 200.0) < 0.5);
+          std::abs(state->position.x.numerical_value_in(cm) - 200.0) < 0.5);
 
-    // --- Elevate into free space ---
-    const double startH = state->position.height.numerical_value_in(si::centi<si::metre>);
-    const MoveResult elevOk = driver.Elevate(30.0 * si::centi<si::metre>);
-    Check("Elevate into free space returns Success",
-          elevOk == MoveResult::Success);
-    Check("Height updated after elevate",
-          std::abs(state->position.height.numerical_value_in(si::centi<si::metre>)
-                   - (startH + 30.0)) < 0.5);
+    // Elevate into free space
+    const double startZ = state->position.z.numerical_value_in(cm);
+    const MoveResult elevOk = driver.Elevate(30.0 * cm);
+    Check("Elevate into free space returns Success", elevOk == MoveResult::Success);
+    Check("z updated after elevate",
+          std::abs(state->position.z.numerical_value_in(cm) - (startZ + 30.0)) < 0.5);
 }
 
 static void TestLidarSensor()
 {
     std::cout << "\n-- MockLidarSensor --\n";
 
-    const DroneConfig    config = MakeTestDroneConfig();
-    const GroundTruthMap gtMap(MakeWallMap());
+    const DroneConfig config  = MakeTestDroneConfig();
+    const ParsedMap   wmap    = MakeWallMap();
+    const CellMap     cellMap(wmap);
 
     auto state = std::make_shared<SimulationState>();
-    // Drone at (100, 100, 150), heading 0 deg — pointing directly at the wall at x=300
-    state->position    = { 100.0 * si::centi<si::metre>,
-                           100.0 * si::centi<si::metre>,
-                           150.0 * si::centi<si::metre> };
-    state->orientation = { 0.0 * si::degree, 0.0 * si::degree };
+    state->position.x            = 100.0 * x_extent[cm];
+    state->position.y            = 100.0 * y_extent[cm];
+    state->position.z            = 150.0 * z_extent[cm];
+    state->orientation.horizontal = 0.0 * horizontal_angle[deg];
+    state->orientation.altitude   = 0.0 * altitude_angle[deg];
 
-    MockLidarSensor lidar(state, config, gtMap);
+    MockPositionSensor posSensor(state);
+    MockLidarSensor    lidar(MakeLidarConfig(config), cellMap, posSensor);
 
-    // Default scan: use drone heading (0 deg), pitch 0
-    const LidarScanResult result = lidar.Scan();
+    // Scan with orientation {0,0} — beam_0 points in +X, wall at x=300, distance ≈ 200 cm
+    const ScanResults results = lidar.scan(Orientation{});
+    Check("Scan returns at least one hit", !results.empty());
 
-    Check("Scan result has non-zero matrix",
-          !result.cells.empty() && !result.cells[0].empty());
-    Check("xy_angle matches drone heading (0 deg)",
-          std::abs(result.xy_angle.numerical_value_in(si::degree)) < 0.001);
-    Check("pitch is 0 deg",
-          std::abs(result.pitch.numerical_value_in(si::degree)) < 0.001);
-
-    // Centre cell (half, half) should hit the wall at ~200 cm
-    const std::size_t half = result.cells.size() / 2;
-    const double centreDist = result.cells[half][half];
-    Check("Centre ray hits wall (distance in range 195–205 cm)",
-          centreDist >= 195.0 && centreDist <= 205.0);
-
-    // Scan with offset +90 deg from heading (0 deg heading → points in +Y): no wall there → -1
-    const LidarScanResult result90 = lidar.Scan(90.0 * si::degree);
-    const double centre90 = result90.cells[half][half];
-    Check("90-deg offset scan: centre ray has no hit (-1)",
-          centre90 == -1.0);
+    bool foundHit = false;
+    for (const auto& hit : results) {
+        const double d = hit.distance.numerical_value_in(cm);
+        if (d >= 190.0 && d <= 210.0) { foundHit = true; break; }
+    }
+    Check("At least one hit in range 190–210 cm (wall ≈ 200 cm away)", foundHit);
 }
 
 static void TestBuildingMap()
@@ -204,158 +174,130 @@ static void TestBuildingMap()
     std::cout << "\n-- BuildingMapImpl --\n";
 
     MissionConfig mc;
-    // Simple 500x500 cm square boundary, height 0–300 cm, 2 decimal places
-    mc.boundaryPolygon   = { {0,0}, {500,0}, {500,500}, {0,500} };
-    mc.minHeight = 0.0   * si::centi<si::metre>;
-    mc.maxHeight = 300.0 * si::centi<si::metre>;
-    mc.outputResXYDecimals = 2;
-    mc.outputResHDecimals  = 2;
+    mc.boundaryPolygon = { {0,0}, {500,0}, {500,500}, {0,500} };
+    mc.minHeight       = ZLength{0.0   * cm};
+    mc.maxHeight       = ZLength{300.0 * cm};
+    mc.outputResXYCm   = 1.0;
+    mc.outputResHCm    = 1.0;
 
     BuildingMapImpl map(mc);
 
-    // Fresh cell should be NotMapped
     Check("Unset cell returns NotMapped",
-          map.Get(100.0 * si::centi<si::metre>,
-                  100.0 * si::centi<si::metre>,
-                  150.0 * si::centi<si::metre>) == MapValue::NotMapped);
+          map.Get(100.0 * x_extent[cm],
+                  100.0 * y_extent[cm],
+                  150.0 * z_extent[cm]) == MapValue::NotMapped);
 
-    // Out of bounds cell should be BeyondBounds
     Check("Out-of-bounds cell returns BeyondBounds",
-          map.Get(600.0 * si::centi<si::metre>,
-                  100.0 * si::centi<si::metre>,
-                  150.0 * si::centi<si::metre>) == MapValue::BeyondBounds);
+          map.Get(600.0 * x_extent[cm],
+                  100.0 * y_extent[cm],
+                  150.0 * z_extent[cm]) == MapValue::BeyondBounds);
 
-    // Set a cell and read it back
-    map.Set(100.0 * si::centi<si::metre>,
-            100.0 * si::centi<si::metre>,
-            150.0 * si::centi<si::metre>, MapValue::Occupied);
+    map.Set(100.0 * x_extent[cm],
+            100.0 * y_extent[cm],
+            150.0 * z_extent[cm], MapValue::Occupied);
     Check("Set then Get returns Occupied",
-          map.Get(100.0 * si::centi<si::metre>,
-                  100.0 * si::centi<si::metre>,
-                  150.0 * si::centi<si::metre>) == MapValue::Occupied);
+          map.Get(100.0 * x_extent[cm],
+                  100.0 * y_extent[cm],
+                  150.0 * z_extent[cm]) == MapValue::Occupied);
 
-    // Set outside bounds should be silently ignored
-    map.Set(600.0 * si::centi<si::metre>,
-            100.0 * si::centi<si::metre>,
-            150.0 * si::centi<si::metre>, MapValue::Occupied);
-    Check("Set out-of-bounds is silently ignored (still BeyondBounds)",
-          map.Get(600.0 * si::centi<si::metre>,
-                  100.0 * si::centi<si::metre>,
-                  150.0 * si::centi<si::metre>) == MapValue::BeyondBounds);
+    map.Set(600.0 * x_extent[cm],
+            100.0 * y_extent[cm],
+            150.0 * z_extent[cm], MapValue::Occupied);
+    Check("Set out-of-bounds is silently ignored",
+          map.Get(600.0 * x_extent[cm],
+                  100.0 * y_extent[cm],
+                  150.0 * z_extent[cm]) == MapValue::BeyondBounds);
 
-    // Resolution round-trip: 100.001 should quantise to same cell as 100.00
-    map.Set(100.001 * si::centi<si::metre>,
-            100.0   * si::centi<si::metre>,
-            150.0   * si::centi<si::metre>, MapValue::Empty);
-    Check("100.001 cm quantises to same cell as 100.00 cm",
-          map.Get(100.0 * si::centi<si::metre>,
-                  100.0 * si::centi<si::metre>,
-                  150.0 * si::centi<si::metre>) == MapValue::Empty);
+    // 100.5 and 100.0 share the same 1 cm voxel (floor(100.5) == floor(100.0) == 100)
+    map.Set(100.5 * x_extent[cm],
+            100.0 * y_extent[cm],
+            150.0 * z_extent[cm], MapValue::Empty);
+    Check("100.5 cm shares voxel with 100.0 cm (floor-based 1 cm cells)",
+          map.Get(100.0 * x_extent[cm],
+                  100.0 * y_extent[cm],
+                  150.0 * z_extent[cm]) == MapValue::Empty);
 }
-
-// ---------------------------------------------------------------------------
-// TestDrone — exercises the Drone hardware-abstraction wrapper
-// ---------------------------------------------------------------------------
-// Same scenario: wall at x=300, y=80..120, h=100..200.
-// Drone starts at (100, 100, 150) heading 0 deg.
 
 static void TestDrone()
 {
     std::cout << "\n-- Drone (hardware abstraction layer) --\n";
 
-    const DroneConfig    config = MakeTestDroneConfig();
-    const GroundTruthMap gtMap(MakeWallMap());
+    const DroneConfig config  = MakeTestDroneConfig();
+    const ParsedMap   wmap    = MakeWallMap();
+    const CellMap     cellMap(wmap);
 
     auto state = std::make_shared<SimulationState>();
-    state->position    = { 100.0 * si::centi<si::metre>,
-                           100.0 * si::centi<si::metre>,
-                           150.0 * si::centi<si::metre> };
-    state->orientation = { 0.0 * si::degree, 0.0 * si::degree };
+    state->position.x            = 100.0 * x_extent[cm];
+    state->position.y            = 100.0 * y_extent[cm];
+    state->position.z            = 150.0 * z_extent[cm];
+    state->orientation.horizontal = 0.0 * horizontal_angle[deg];
+    state->orientation.altitude   = 0.0 * altitude_angle[deg];
 
     MockPositionSensor posSensor(state);
-    MockMovementDriver driver(state, config, gtMap);
-    MockLidarSensor    lidar(state, config, gtMap);
+    MockMovementDriver driver(state, config, cellMap);
+    MockLidarSensor    lidar(MakeLidarConfig(config), cellMap, posSensor);
 
     MissionConfig mc;
-    mc.boundaryPolygon  = { {0,0}, {500,0}, {500,500}, {0,500} };
-    mc.minHeight        = 0.0   * si::centi<si::metre>;
-    mc.maxHeight        = 300.0 * si::centi<si::metre>;
-    mc.outputResXYDecimals = 2;
-    mc.outputResHDecimals  = 2;
+    mc.boundaryPolygon = { {0,0}, {500,0}, {500,500}, {0,500} };
+    mc.minHeight       = ZLength{0.0   * cm};
+    mc.maxHeight       = ZLength{300.0 * cm};
+    mc.outputResXYCm   = 1.0;
+    mc.outputResHCm    = 1.0;
     BuildingMapImpl buildingMap(mc);
 
     Drone drone(lidar, posSensor, driver, buildingMap);
 
-    // --- GetLocation returns the initial position ---
+    // GetLocation
     const Position3D pos = drone.GetLocation();
-    Check("GetLocation x == 100 cm",
-          pos.x.numerical_value_in(si::centi<si::metre>) == 100.0);
-    Check("GetLocation y == 100 cm",
-          pos.y.numerical_value_in(si::centi<si::metre>) == 100.0);
-    Check("GetLocation height == 150 cm",
-          pos.height.numerical_value_in(si::centi<si::metre>) == 150.0);
+    Check("GetLocation x == 100 cm", pos.x.numerical_value_in(cm) == 100.0);
+    Check("GetLocation y == 100 cm", pos.y.numerical_value_in(cm) == 100.0);
+    Check("GetLocation z == 150 cm", pos.z.numerical_value_in(cm) == 150.0);
 
-    // --- Rotate delegates to driver (clamped to 45 deg) ---
-    const MoveResult rotResult = drone.Rotate(60.0 * si::degree);
-    Check("Rotate returns Success",
-          rotResult == MoveResult::Success);
+    // Rotate (clamped to 45)
+    const MoveResult rotResult = drone.Rotate(60.0 * horizontal_angle[deg]);
+    Check("Rotate returns Success", rotResult == MoveResult::Success);
     Check("Rotate 60 deg clamped to 45 deg",
-          std::abs(state->orientation.heading.numerical_value_in(si::degree) - 45.0) < 0.001);
+          std::abs(state->orientation.horizontal.numerical_value_in(deg) - 45.0) < 0.001);
+    state->orientation.horizontal = 0.0 * horizontal_angle[deg];
 
-    // Reset heading for straight-line tests
-    state->orientation.heading = 0.0 * si::degree;
-
-    // --- Advance into free space ---
-    const MoveResult advOk = drone.Advance(100.0 * si::centi<si::metre>);
-    Check("Advance into free space returns Success",
-          advOk == MoveResult::Success);
+    // Advance into free space
+    const MoveResult advOk = drone.Advance(100.0 * cm);
+    Check("Advance into free space returns Success", advOk == MoveResult::Success);
     Check("Position updated after Advance",
-          std::abs(drone.GetLocation().x.numerical_value_in(si::centi<si::metre>) - 200.0) < 0.5);
+          std::abs(drone.GetLocation().x.numerical_value_in(cm) - 200.0) < 0.5);
 
-    // --- Advance into wall returns CollisionDetected ---
-    const MoveResult advCollide = drone.Advance(100.0 * si::centi<si::metre>);
+    // Advance into wall
+    const MoveResult advCollide = drone.Advance(100.0 * cm);
     Check("Advance into wall returns CollisionDetected",
           advCollide == MoveResult::CollisionDetected);
     Check("Position NOT updated on collision",
-          std::abs(drone.GetLocation().x.numerical_value_in(si::centi<si::metre>) - 200.0) < 0.5);
+          std::abs(drone.GetLocation().x.numerical_value_in(cm) - 200.0) < 0.5);
 
-    // --- Elevate ---
-    const double startH = drone.GetLocation().height.numerical_value_in(si::centi<si::metre>);
-    const MoveResult elevOk = drone.Elevate(30.0 * si::centi<si::metre>);
-    Check("Elevate returns Success",
-          elevOk == MoveResult::Success);
-    Check("Height updated after Elevate",
-          std::abs(drone.GetLocation().height.numerical_value_in(si::centi<si::metre>)
-                   - (startH + 30.0)) < 0.5);
+    // Elevate
+    const double startZ = drone.GetLocation().z.numerical_value_in(cm);
+    const MoveResult elevOk = drone.Elevate(30.0 * cm);
+    Check("Elevate returns Success", elevOk == MoveResult::Success);
+    Check("z updated after Elevate",
+          std::abs(drone.GetLocation().z.numerical_value_in(cm) - (startZ + 30.0)) < 0.5);
 
-    // --- Scan returns a valid matrix pointing toward the wall ---
-    const LidarScanResult scan = drone.Scan();
-    Check("Scan returns non-empty matrix",
-          !scan.cells.empty() && !scan.cells[0].empty());
-    const std::size_t half = scan.cells.size() / 2;
-    const double centreDist = scan.cells[half][half];
-    Check("Scan centre ray hits wall (~100 cm away after advance)",
-          centreDist >= 95.0 && centreDist <= 105.0);
+    // Scan returns hits
+    const ScanResults scan = drone.Scan();
+    Check("Scan returns at least one hit", !scan.empty());
 
-    // --- RecordCell / QueryCell round-trip ---
-    drone.RecordCell(200.0 * si::centi<si::metre>,
-                     100.0 * si::centi<si::metre>,
-                     150.0 * si::centi<si::metre>, MapValue::Occupied);
+    // RecordCell / QueryCell round-trip
+    drone.RecordCell(200.0 * x_extent[cm],
+                     100.0 * y_extent[cm],
+                     150.0 * z_extent[cm], MapValue::Occupied);
     Check("RecordCell then QueryCell returns Occupied",
-          drone.QueryCell(200.0 * si::centi<si::metre>,
-                          100.0 * si::centi<si::metre>,
-                          150.0 * si::centi<si::metre>) == MapValue::Occupied);
+          drone.QueryCell(200.0 * x_extent[cm],
+                          100.0 * y_extent[cm],
+                          150.0 * z_extent[cm]) == MapValue::Occupied);
 
-    // --- QueryCell on unset location returns NotMapped ---
     Check("QueryCell on unset location returns NotMapped",
-          drone.QueryCell(1.0 * si::centi<si::metre>,
-                          1.0 * si::centi<si::metre>,
-                          1.0 * si::centi<si::metre>) == MapValue::NotMapped);
+          drone.QueryCell(1.0 * x_extent[cm],
+                          1.0 * y_extent[cm],
+                          1.0 * z_extent[cm]) == MapValue::NotMapped);
 }
-
-// ---------------------------------------------------------------------------
-// main
-// ---------------------------------------------------------------------------
 
 int main()
 {

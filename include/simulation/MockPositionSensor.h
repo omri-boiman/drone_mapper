@@ -6,20 +6,15 @@
 
 namespace drone {
 
-// ---------------------------------------------------------------------------
-// MockPositionSensor
-//
-// Reads the drone's current position directly from the shared SimulationState.
-// The drone algorithm only sees the IPositionSensor interface.
-// ---------------------------------------------------------------------------
-class MockPositionSensor : public IPositionSensor {
+class MockPositionSensor final : public IPositionSensor {
 public:
-    explicit MockPositionSensor(std::shared_ptr<SimulationState> state);
+    explicit MockPositionSensor(std::shared_ptr<const SimulationState> state);
 
-    Position3D GetPosition() const override;
+    [[nodiscard]] Position3D  position() const override;
+    [[nodiscard]] Orientation heading()  const override;
 
 private:
-    std::shared_ptr<SimulationState> m_state;
+    std::shared_ptr<const SimulationState> m_state;
 };
 
 } // namespace drone

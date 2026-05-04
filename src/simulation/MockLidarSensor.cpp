@@ -1,110 +1,119 @@
 #include "simulation/MockLidarSensor.h"
 
-#include <cmath>
-#include <numbers>
+#include <mp-units/systems/si/math.h>
+
+#include <algorithm>
+#include <optional>
 
 namespace drone {
 
-// ---------------------------------------------------------------------------
+namespace {
 
-MockLidarSensor::MockLidarSensor(std::shared_ptr<SimulationState> state,
-                                 const DroneConfig&               config,
-                                 const GroundTruthMap&            groundTruth)
-    : m_state(std::move(state))
-    , m_config(config)
-    , m_groundTruth(groundTruth)
-{}
-
-// ---------------------------------------------------------------------------
-
-double MockLidarSensor::CastRay(double originX, double originY, double originH,
-                                double dx,      double dy,      double dz) const
-{
-    const double minRange = m_config.lidarMinRange.numerical_value_in(si::centi<si::metre>);
-    const double maxRange = m_config.lidarMaxRange.numerical_value_in(si::centi<si::metre>);
-
-    // Step in 1 cm increments (matches GroundTruthMap cm quantisation)
-    const int maxSteps = static_cast<int>(maxRange) + 1;
-    for (int t = 1; t <= maxSteps; ++t) {
-        const double cx = originX + t * dx;
-        const double cy = originY + t * dy;
-        const double ch = originH + t * dz;
-
-        if (m_groundTruth.IsOccupied(
-                cx * si::centi<si::metre>,
-                cy * si::centi<si::metre>,
-                ch * si::centi<si::metre>)) {
-            const double dist = static_cast<double>(t);
-            if (dist < minRange) return -2.0;
-            if (dist > maxRange) return -1.0;
-            return dist;
-        }
+[[nodiscard]] std::size_t beams_on_circle(std::size_t circle_index) {
+    std::size_t count = 1;
+    for (std::size_t i = 0; i < circle_index; ++i) {
+        count *= 4;
     }
-    return -1.0; // no hit within maxRange
+    return count;
 }
 
-// ---------------------------------------------------------------------------
+[[nodiscard]] HorizontalAngle horizontal_delta(PhysicalLength offset, PhysicalLength distance) {
+    return HorizontalAngle{si::atan2(offset, distance)};
+}
 
-LidarScanResult MockLidarSensor::Scan(std::optional<Degrees> xy_angle,
-                                       std::optional<Degrees> pitch)
-{
-    // 1. Resolve scan direction.
-    //    xy_angle is an OFFSET from the current heading (assignment:
-    //    "X-Y angle in reference to current direction"). Absent = 0 offset.
-    const double headingDeg  = m_state->orientation.heading.numerical_value_in(si::degree);
-    const double xyOffsetDeg = xy_angle.has_value()
-        ? xy_angle->numerical_value_in(si::degree)
-        : 0.0;
-    const double xyDeg    = headingDeg + xyOffsetDeg;
-    const double xyRad    = xyDeg * std::numbers::pi / 180.0;
+[[nodiscard]] Altitude altitude_delta(PhysicalLength offset, PhysicalLength distance) {
+    return Altitude{si::atan2(offset, distance)};
+}
 
-    const double pitchDeg = pitch.has_value()
-        ? pitch->numerical_value_in(si::degree)
-        : 0.0;
-    const double pitchRad = pitchDeg * std::numbers::pi / 180.0;
+} // namespace
 
-    // 2. Compute matrix dimensions from FOV and resolution at dist1
-    const double fovRad        = m_config.lidarFov.numerical_value_in(si::degree)
-                                 * std::numbers::pi / 180.0;
-    const double res1          = m_config.lidarResAtDist1.numerical_value_in(si::centi<si::metre>);
-    const double dist1         = m_config.lidarDist1.numerical_value_in(si::centi<si::metre>);
-    const double deltaAngleRad = std::atan(res1 / dist1);
-    const int    half          = static_cast<int>(std::floor(fovRad / (2.0 * deltaAngleRad)));
-    const int    numCells      = 2 * half + 1; // odd, centred
+MockLidarSensor::MockLidarSensor(LidarConfig config,
+                                 const IMap3D& map,
+                                 const IPositionSensor& pos_sensor)
+    : config_(config), map_(map), pos_sensor_(pos_sensor) {}
 
-    // 3. Drone origin
-    const double ox = m_state->position.x.numerical_value_in(si::centi<si::metre>);
-    const double oy = m_state->position.y.numerical_value_in(si::centi<si::metre>);
-    const double oh = m_state->position.height.numerical_value_in(si::centi<si::metre>);
+ScanResults MockLidarSensor::scan([[maybe_unused]] Orientation rel_scan_orientation) const {
+    ScanResults results;
+    if (config_.fov_circles == 0) {
+        return results;
+    }
 
-    // 4. Build matrix [row = vertical index, col = horizontal index]
-    LidarMatrix matrix(static_cast<std::size_t>(numCells),
-                       LidarRow(static_cast<std::size_t>(numCells), -1.0));
+    const Orientation sensor_heading = pos_sensor_.heading();
+    const Orientation beam_0{
+        sensor_heading.horizontal,
+        sensor_heading.altitude,
+    };
+    // scan beam_0
+    const Orientation beam_0_abs{
+        beam_0.horizontal + sensor_heading.horizontal,
+        beam_0.altitude + sensor_heading.altitude,
+    };
+    if (auto dist = traceBeam(beam_0_abs)) {
+        results.push_back(LidarHit{*dist, beam_0_abs});
+    }
 
-    for (int row = 0; row < numCells; ++row) {
-        const double rowOffset  = (row - half) * deltaAngleRad; // + = upward
-        const double totalPitch = pitchRad + rowOffset;
+    for (std::size_t circle = 1; circle < config_.fov_circles; ++circle) {
+        const std::size_t beam_count = beams_on_circle(circle);
+        const PhysicalLength radius = static_cast<double>(circle) * config_.circle_spacing / 2.0;
 
-        for (int col = 0; col < numCells; ++col) {
-            const double colOffset = (col - half) * deltaAngleRad;
-            const double totalXY   = xyRad + colOffset;
+        for (std::size_t i = 0; i < beam_count; ++i) {
+            const auto theta = (360.0 * static_cast<double>(i) / static_cast<double>(beam_count)) * deg;
+            const PhysicalLength horizontal_offset = radius * si::cos(theta);
+            const PhysicalLength altitude_offset   = radius * si::sin(theta);
 
-            const double horiz = std::cos(totalPitch);
-            const double dx    = horiz * std::cos(totalXY);
-            const double dy    = horiz * std::sin(totalXY);
-            const double dz    = std::sin(totalPitch);
+            const Orientation offset{
+                horizontal_delta(horizontal_offset, config_.beam_length_min),
+                altitude_delta(altitude_offset, config_.beam_length_min),
+            };
 
-            matrix[static_cast<std::size_t>(row)][static_cast<std::size_t>(col)] =
-                CastRay(ox, oy, oh, dx, dy, dz);
+            const Orientation abs_circle_beam{
+                beam_0.horizontal + offset.horizontal + sensor_heading.horizontal,
+                beam_0.altitude   + offset.altitude   + sensor_heading.altitude,
+            };
+            const Orientation circle_beam{
+                beam_0.horizontal + offset.horizontal,
+                beam_0.altitude   + offset.altitude,
+            };
+            if (auto dist = traceBeam(abs_circle_beam)) {
+                results.push_back(LidarHit{*dist, circle_beam});
+            }
         }
     }
 
-    // Return actual absolute scan angles so the caller can interpret the matrix
-    return LidarScanResult{
-        .cells    = std::move(matrix),
-        .xy_angle = xyDeg    * si::degree,
-        .pitch    = pitchDeg * si::degree
-    };
+    return results;
+}
+
+const LidarConfig& MockLidarSensor::config() const noexcept {
+    return config_;
+}
+
+std::optional<PhysicalLength> MockLidarSensor::traceBeam(const Orientation& beam_orientation) const {
+    const Position3D origin = pos_sensor_.position();
+
+    const auto cos_altitude = si::cos(beam_orientation.altitude);
+    const auto dx = cos_altitude * si::cos(beam_orientation.horizontal);
+    const auto dy = cos_altitude * si::sin(beam_orientation.horizontal);
+    const auto dz = si::sin(beam_orientation.altitude);
+
+    const PhysicalLength step        = PhysicalLength{0.1 * cm};
+    const PhysicalLength min_distance = std::min(config_.beam_length_min, step);
+
+    for (PhysicalLength distance = min_distance; distance <= config_.beam_length_max; distance += step) {
+        const Position3D sample{
+            origin.x + dx.force_numerical_value_in(mp::one) * distance.force_numerical_value_in(cm) * x_extent[cm],
+            origin.y + dy.force_numerical_value_in(mp::one) * distance.force_numerical_value_in(cm) * y_extent[cm],
+            origin.z + dz.force_numerical_value_in(mp::one) * distance.force_numerical_value_in(cm) * z_extent[cm],
+        };
+
+        if (map_.get(sample) != 0) {
+            if (distance < config_.beam_length_min) {
+                return PhysicalLength{0 * cm};
+            }
+            return distance;
+        }
+    }
+
+    return std::nullopt;
 }
 
 } // namespace drone

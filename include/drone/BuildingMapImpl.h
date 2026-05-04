@@ -8,69 +8,44 @@
 
 namespace drone {
 
-// ---------------------------------------------------------------------------
-// BuildingMapImpl
-//
-// The drone's own sparse 3D occupancy map — implements IBuildingMap.
-// The drone is the only writer; it never sees the ground-truth input map.
-//
-// Storage:
-//   std::unordered_map keyed on quantised (ix, iy, ih) integer indices.
-//   Missing key  → NotMapped  (-1)
-//   Out-of-bounds → BeyondBounds (-2)
-//
-// Quantisation:
-//   ix = round(x_cm  * 10^outputResXYDecimals)
-//   iy = round(y_cm  * 10^outputResXYDecimals)
-//   ih = round(h_cm  * 10^outputResHDecimals)
-//
-// Boundary check:
-//   XY plane : point-in-polygon test against MissionConfig::boundaryPolygon
-//   Height   : [minHeightCm, maxHeightCm]
-// ---------------------------------------------------------------------------
 class BuildingMapImpl : public IBuildingMap {
 public:
     explicit BuildingMapImpl(const MissionConfig& mission);
 
-    // Returns BeyondBounds if outside polygon/height range.
-    // Returns NotMapped if inside but not yet recorded.
-    // Returns stored value otherwise.
-    MapValue Get(Centi x, Centi y, Centi height) const override;
+    MapValue Get(XLength x, YLength y, ZLength z) const override;
+    void     Set(XLength x, YLength y, ZLength z, MapValue value) override;
 
-    // Silently ignores positions outside the mission boundary.
-    void Set(Centi x, Centi y, Centi height, MapValue value) override;
+    const std::vector<std::pair<double,double>>& polygon()   const { return m_polygon; }
+    ZLength minHeight() const { return m_minHeight; }
+    ZLength maxHeight() const { return m_maxHeight; }
 
 private:
-    // Integer key for the sparse hash map
     struct Key {
-        int ix, iy, ih;
+        int ix, iy, iz;
         bool operator==(const Key& o) const noexcept {
-            return ix == o.ix && iy == o.iy && ih == o.ih;
+            return ix == o.ix && iy == o.iy && iz == o.iz;
         }
     };
     struct KeyHash {
         std::size_t operator()(const Key& k) const noexcept {
             std::size_t seed = static_cast<std::size_t>(k.ix);
             seed ^= static_cast<std::size_t>(k.iy) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
-            seed ^= static_cast<std::size_t>(k.ih) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
+            seed ^= static_cast<std::size_t>(k.iz) + 0x9e3779b9u + (seed << 6) + (seed >> 2);
             return seed;
         }
     };
 
-    Key MakeKey(double xCm, double yCm, double hCm) const;
-    bool IsInBounds(Centi x, Centi y, Centi height) const;
-
-    // Point-in-polygon test (ray-casting) for the XY boundary.
-    // Polygon vertices are raw doubles (cm) for use in the geometric algorithm.
+    Key  MakeKey(double xCm, double yCm, double zCm) const;
+    bool IsInBounds(XLength x, YLength y, ZLength z) const;
     bool IsInsidePolygon(double xCm, double yCm) const;
 
     std::unordered_map<Key, MapValue, KeyHash> m_cells;
 
     const std::vector<std::pair<double,double>>& m_polygon;
-    Centi  m_minHeight;
-    Centi  m_maxHeight;
-    double m_xyScale;  // 10^outputResXYDecimals
-    double m_hScale;   // 10^outputResHDecimals
+    ZLength m_minHeight;
+    ZLength m_maxHeight;
+    double  m_xyCellCm;
+    double  m_hCellCm;
 };
 
 } // namespace drone

@@ -8,11 +8,6 @@
 
 namespace drone {
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-// Trim leading/trailing whitespace
 static std::string Trim(const std::string& s)
 {
     const auto a = s.find_first_not_of(" \t\r\n");
@@ -21,7 +16,6 @@ static std::string Trim(const std::string& s)
     return s.substr(a, b - a + 1);
 }
 
-// Load a key=value file into a simple map; skip blank lines and # comments
 using KVMap = std::vector<std::pair<std::string, std::string>>;
 
 static KVMap LoadKV(const std::filesystem::path& filePath,
@@ -55,7 +49,6 @@ static KVMap LoadKV(const std::filesystem::path& filePath,
     return result;
 }
 
-// Find a key in the KVMap; returns empty string if not found
 static std::string Find(const KVMap& kv, const std::string& key)
 {
     for (const auto& [k, v] : kv) {
@@ -64,7 +57,6 @@ static std::string Find(const KVMap& kv, const std::string& key)
     return {};
 }
 
-// Parse a double from string; on failure log and return defaultVal
 static double GetDouble(const KVMap& kv, const std::string& key,
                         double defaultVal, const std::string& file,
                         ErrorLogger& logger)
@@ -84,29 +76,25 @@ static double GetDouble(const KVMap& kv, const std::string& key,
     }
 }
 
-// Typed wrappers — parse then attach the correct unit
-static Centi GetCenti(const KVMap& kv, const std::string& key,
-                      Centi defaultVal, const std::string& file,
-                      ErrorLogger& logger)
+static PhysicalLength GetCm(const KVMap& kv, const std::string& key,
+                             PhysicalLength defaultVal, const std::string& file,
+                             ErrorLogger& logger)
 {
-    const double raw = GetDouble(kv, key,
-        defaultVal.numerical_value_in(si::centi<si::metre>), file, logger);
-    return raw * si::centi<si::metre>;
+    const double raw = GetDouble(kv, key, defaultVal.numerical_value_in(cm), file, logger);
+    return raw * cm;
 }
 
-static Degrees GetDegrees(const KVMap& kv, const std::string& key,
-                          Degrees defaultVal, const std::string& file,
-                          ErrorLogger& logger)
+static HorizontalAngle GetDeg(const KVMap& kv, const std::string& key,
+                               HorizontalAngle defaultVal, const std::string& file,
+                               ErrorLogger& logger)
 {
-    const double raw = GetDouble(kv, key,
-        defaultVal.numerical_value_in(si::degree), file, logger);
-    return raw * si::degree;
+    const double raw = GetDouble(kv, key, defaultVal.numerical_value_in(deg), file, logger);
+    return raw * deg;
 }
 
-// Parse an int from string; on failure log and return defaultVal
-static int GetInt(const KVMap& kv, const std::string& key,
-                  int defaultVal, const std::string& file,
-                  ErrorLogger& logger)
+static std::size_t GetSizeT(const KVMap& kv, const std::string& key,
+                             std::size_t defaultVal, const std::string& file,
+                             ErrorLogger& logger)
 {
     const std::string val = Find(kv, key);
     if (val.empty()) {
@@ -115,7 +103,9 @@ static int GetInt(const KVMap& kv, const std::string& key,
         return defaultVal;
     }
     try {
-        return std::stoi(val);
+        const long long v = std::stoll(val);
+        if (v < 0) throw std::range_error("negative");
+        return static_cast<std::size_t>(v);
     } catch (...) {
         logger.Log(file + ": bad value for '" + key + "' ('" + val +
                    "') — using default " + std::to_string(defaultVal));
@@ -123,10 +113,8 @@ static int GetInt(const KVMap& kv, const std::string& key,
     }
 }
 
-// Parse boundary_polygon = (x1,y1),(x2,y2),...
 static std::vector<std::pair<double,double>>
-ParsePolygon(const std::string& raw, const std::string& file,
-             ErrorLogger& logger)
+ParsePolygon(const std::string& raw, const std::string& file, ErrorLogger& logger)
 {
     std::vector<std::pair<double,double>> poly;
     if (raw.empty()) {
@@ -135,7 +123,6 @@ ParsePolygon(const std::string& raw, const std::string& file,
     }
 
     std::string s = raw;
-    // Remove all spaces
     s.erase(std::remove(s.begin(), s.end(), ' '), s.end());
 
     std::istringstream ss(s);
@@ -144,7 +131,6 @@ ParsePolygon(const std::string& raw, const std::string& file,
     while (std::getline(ss, token, ')')) {
         ++idx;
         if (token.empty()) continue;
-        // Strip leading '('
         if (!token.empty() && token.front() == '(') token = token.substr(1);
         if (!token.empty() && token.front() == ',') token = token.substr(1);
 
@@ -155,9 +141,8 @@ ParsePolygon(const std::string& raw, const std::string& file,
             continue;
         }
         try {
-            const double x = std::stod(token.substr(0, comma));
-            const double y = std::stod(token.substr(comma + 1));
-            poly.emplace_back(x, y);
+            poly.emplace_back(std::stod(token.substr(0, comma)),
+                              std::stod(token.substr(comma + 1)));
         } catch (...) {
             logger.Log(file + ": bad polygon vertex #" + std::to_string(idx) +
                        " '" + token + "' — skipped");
@@ -171,10 +156,6 @@ ParsePolygon(const std::string& raw, const std::string& file,
     return poly;
 }
 
-// ---------------------------------------------------------------------------
-// ParseDroneConfig
-// ---------------------------------------------------------------------------
-
 bool ParseDroneConfig(const std::filesystem::path& filePath,
                       DroneConfig&                 out,
                       ErrorLogger&                 logger)
@@ -185,26 +166,19 @@ bool ParseDroneConfig(const std::filesystem::path& filePath,
 
     const std::string f = filePath.filename().string();
 
-    out.minPassWidth  = GetCenti  (kv, "min_pass_width_cm",        out.minPassWidth,   f, logger);
-    out.minPassLength = GetCenti  (kv, "min_pass_length_cm",       out.minPassLength,  f, logger);
-    out.minPassHeight = GetCenti  (kv, "min_pass_height_cm",       out.minPassHeight,  f, logger);
-    out.lidarFov      = GetDegrees(kv, "lidar_fov_deg",            out.lidarFov,       f, logger);
-    out.lidarMinRange = GetCenti  (kv, "lidar_min_range_cm",       out.lidarMinRange,  f, logger);
-    out.lidarMaxRange = GetCenti  (kv, "lidar_max_range_cm",       out.lidarMaxRange,  f, logger);
-    out.lidarResAtDist1 = GetCenti(kv, "lidar_res_at_dist1_cm",   out.lidarResAtDist1, f, logger);
-    out.lidarDist1      = GetCenti(kv, "lidar_dist1_cm",           out.lidarDist1,      f, logger);
-    out.lidarResAtDist2 = GetCenti(kv, "lidar_res_at_dist2_cm",   out.lidarResAtDist2, f, logger);
-    out.lidarDist2      = GetCenti(kv, "lidar_dist2_cm",           out.lidarDist2,      f, logger);
-    out.maxRotate  = GetDegrees(kv, "max_rotate_deg",  out.maxRotate,  f, logger);
-    out.maxAdvance = GetCenti  (kv, "max_advance_cm",  out.maxAdvance, f, logger);
-    out.maxElevate = GetCenti  (kv, "max_elevate_cm",  out.maxElevate, f, logger);
+    out.minPassWidth       = GetCm (kv, "min_pass_width_cm",        out.minPassWidth,       f, logger);
+    out.minPassLength      = GetCm (kv, "min_pass_length_cm",       out.minPassLength,      f, logger);
+    out.minPassHeight      = GetCm (kv, "min_pass_height_cm",       out.minPassHeight,      f, logger);
+    out.lidarBeamMin       = GetCm (kv, "lidar_beam_min_cm",        out.lidarBeamMin,       f, logger);
+    out.lidarBeamMax       = GetCm (kv, "lidar_beam_max_cm",        out.lidarBeamMax,       f, logger);
+    out.lidarCircleSpacing = GetCm (kv, "lidar_circle_spacing_cm",  out.lidarCircleSpacing, f, logger);
+    out.lidarFovCircles    = GetSizeT(kv, "lidar_fov_circles",      out.lidarFovCircles,    f, logger);
+    out.maxRotate          = GetDeg(kv, "max_rotate_deg",           out.maxRotate,          f, logger);
+    out.maxAdvance         = GetCm (kv, "max_advance_cm",           out.maxAdvance,         f, logger);
+    out.maxElevate         = GetCm (kv, "max_elevate_cm",           out.maxElevate,         f, logger);
 
     return true;
 }
-
-// ---------------------------------------------------------------------------
-// ParseMissionConfig
-// ---------------------------------------------------------------------------
 
 bool ParseMissionConfig(const std::filesystem::path& filePath,
                         MissionConfig&               out,
@@ -216,16 +190,14 @@ bool ParseMissionConfig(const std::filesystem::path& filePath,
 
     const std::string f = filePath.filename().string();
 
-    out.boundaryPolygon     = ParsePolygon(Find(kv, "boundary_polygon"), f, logger);
-    out.minHeight           = GetCenti(kv, "min_height_cm",  out.minHeight,  f, logger);
-    out.maxHeight           = GetCenti(kv, "max_height_cm",  out.maxHeight,  f, logger);
-    out.outputResXYDecimals = GetInt(kv, "output_resolution_xy_decimals",
-                                     out.outputResXYDecimals, f, logger);
-    out.outputResHDecimals  = GetInt(kv, "output_resolution_h_decimals",
-                                     out.outputResHDecimals,  f, logger);
-    out.startX      = GetCenti(kv, "start_x_cm",      out.startX,      f, logger);
-    out.startY      = GetCenti(kv, "start_y_cm",      out.startY,      f, logger);
-    out.startHeight = GetCenti(kv, "start_height_cm", out.startHeight, f, logger);
+    out.boundaryPolygon = ParsePolygon(Find(kv, "boundary_polygon"), f, logger);
+    out.minHeight       = ZLength{GetDouble(kv, "min_height_cm",  out.minHeight.numerical_value_in(cm),  f, logger) * cm};
+    out.maxHeight       = ZLength{GetDouble(kv, "max_height_cm",  out.maxHeight.numerical_value_in(cm),  f, logger) * cm};
+    out.outputResXYCm   = GetDouble(kv, "output_resolution_xy_cm", out.outputResXYCm, f, logger);
+    out.outputResHCm    = GetDouble(kv, "output_resolution_h_cm",  out.outputResHCm,  f, logger);
+    out.startX          = XLength{GetDouble(kv, "start_x_cm",      out.startX.numerical_value_in(cm),      f, logger) * cm};
+    out.startY          = YLength{GetDouble(kv, "start_y_cm",      out.startY.numerical_value_in(cm),      f, logger) * cm};
+    out.startHeight     = ZLength{GetDouble(kv, "start_height_cm", out.startHeight.numerical_value_in(cm), f, logger) * cm};
 
     return true;
 }
