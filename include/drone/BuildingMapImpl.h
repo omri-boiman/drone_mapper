@@ -5,6 +5,7 @@
 #include <utility>
 #include "interfaces/IBuildingMap.h"
 #include "io/ConfigParser.h"
+#include "io/MapIO.h"
 
 namespace drone {
 
@@ -18,6 +19,8 @@ public:
     const std::vector<std::pair<double,double>>& polygon()   const { return m_polygon; }
     ZLength minHeight() const { return m_minHeight; }
     ZLength maxHeight() const { return m_maxHeight; }
+
+    std::vector<MapCell> GetAllCells() const;
 
 private:
     struct Key {

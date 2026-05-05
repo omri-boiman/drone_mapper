@@ -65,4 +65,17 @@ void BuildingMapImpl::Set(XLength x, YLength y, ZLength z, MapValue value)
         z.numerical_value_in(cm))] = value;
 }
 
+std::vector<MapCell> BuildingMapImpl::GetAllCells() const
+{
+    std::vector<MapCell> result;
+    result.reserve(m_cells.size());
+    for (const auto& [key, value] : m_cells) {
+        const double xCm = key.ix * m_xyCellCm;
+        const double yCm = key.iy * m_xyCellCm;
+        const double zCm = key.iz * m_hCellCm;
+        result.push_back({xCm * cm, yCm * cm, zCm * cm, value});
+    }
+    return result;
+}
+
 } // namespace drone

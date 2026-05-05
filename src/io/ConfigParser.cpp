@@ -131,8 +131,8 @@ ParsePolygon(const std::string& raw, const std::string& file, ErrorLogger& logge
     while (std::getline(ss, token, ')')) {
         ++idx;
         if (token.empty()) continue;
-        if (!token.empty() && token.front() == '(') token = token.substr(1);
         if (!token.empty() && token.front() == ',') token = token.substr(1);
+        if (!token.empty() && token.front() == '(') token = token.substr(1);
 
         const auto comma = token.find(',');
         if (comma == std::string::npos) {

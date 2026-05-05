@@ -32,7 +32,7 @@ MockLidarSensor::MockLidarSensor(LidarConfig config,
                                  const IPositionSensor& pos_sensor)
     : config_(config), map_(map), pos_sensor_(pos_sensor) {}
 
-ScanResults MockLidarSensor::scan([[maybe_unused]] Orientation rel_scan_orientation) const {
+ScanResults MockLidarSensor::scan(Orientation rel_scan_orientation) const {
     ScanResults results;
     if (config_.fov_circles == 0) {
         return results;
@@ -40,16 +40,16 @@ ScanResults MockLidarSensor::scan([[maybe_unused]] Orientation rel_scan_orientat
 
     const Orientation sensor_heading = pos_sensor_.heading();
     const Orientation beam_0{
-        sensor_heading.horizontal,
-        sensor_heading.altitude,
+        rel_scan_orientation.horizontal,
+        rel_scan_orientation.altitude,
     };
-    // scan beam_0
+    // scan beam_0: trace in absolute direction, return relative angle
     const Orientation beam_0_abs{
         beam_0.horizontal + sensor_heading.horizontal,
         beam_0.altitude + sensor_heading.altitude,
     };
     if (auto dist = traceBeam(beam_0_abs)) {
-        results.push_back(LidarHit{*dist, beam_0_abs});
+        results.push_back(LidarHit{*dist, beam_0});
     }
 
     for (std::size_t circle = 1; circle < config_.fov_circles; ++circle) {
