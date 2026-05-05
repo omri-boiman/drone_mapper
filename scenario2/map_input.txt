@@ -1,0 +1,4 @@
+VERSION 1
+BOUNDS xmin=0.00 xmax=5.00 ymin=0.00 ymax=5.00 hmin=0.00 hmax=5.00
+CELL 4.00 4.00 4.00 1
+END
