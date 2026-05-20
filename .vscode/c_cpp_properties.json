@@ -1,0 +1,15 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "compileCommands": "${workspaceFolder}/build/build/Release/compile_commands.json",
+            "includePath": [
+                "${workspaceFolder}/include",
+                "/root/.conan2/p/mp-un2bf4fb3e71e35/p/include"
+            ],
+            "cppStandard": "c++20",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
