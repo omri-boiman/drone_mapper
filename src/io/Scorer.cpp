@@ -10,27 +10,29 @@ namespace {
 
 using Key = std::tuple<int, int, int>;
 
-Key makeKey(const MapCell& c)
+Key makeKey(const MapCell& c, double resXYCm, double resHCm)
 {
     return {
-        static_cast<int>(std::floor(c.x.numerical_value_in(cm))),
-        static_cast<int>(std::floor(c.y.numerical_value_in(cm))),
-        static_cast<int>(std::floor(c.z.numerical_value_in(cm)))
+        static_cast<int>(std::floor(c.x.numerical_value_in(cm) / resXYCm)),
+        static_cast<int>(std::floor(c.y.numerical_value_in(cm) / resXYCm)),
+        static_cast<int>(std::floor(c.z.numerical_value_in(cm) / resHCm))
     };
 }
 
 } // namespace
 
 double ComputeF1Score(const std::vector<MapCell>& mapped,
-                      const std::vector<MapCell>& groundTruth)
+                      const std::vector<MapCell>& groundTruth,
+                      double resXYCm,
+                      double resHCm)
 {
     std::set<Key> groundTruthSet;
     for (const auto& c : groundTruth)
-        groundTruthSet.insert(makeKey(c));
+        groundTruthSet.insert(makeKey(c, resXYCm, resHCm));
 
     std::set<Key> mappedSet;
     for (const auto& c : mapped)
-        mappedSet.insert(makeKey(c));
+        mappedSet.insert(makeKey(c, resXYCm, resHCm));
 
     int tp = 0, fp = 0, fn = 0;
     for (const auto& k : mappedSet)

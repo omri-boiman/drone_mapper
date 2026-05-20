@@ -10,15 +10,35 @@ Name: [NAME 2]    ID: [ID 2]
 
 Building & Running
 ------------------
-Requirements: g++ (C++20), CMake, Conan 2.x
+The project uses a VS Code Dev Container. All tools (GCC 13, CMake, Conan 2.x)
+and the mp-units library are installed automatically inside the container.
 
-  make rebuild          # installs dependencies, configures, builds
-  make run ARGS=./scenario1   # run on a scenario folder
+Step 1 — Open in Dev Container
+  - Install VS Code and the "Dev Containers" extension
+      (ms-vscode-remote.remote-containers)
+  - Open this folder (drone_mapper/) in VS Code
+  - When prompted "Reopen in Container", click it
+      (or: F1 -> "Dev Containers: Reopen in Container")
+  - Wait for the container to build and for the postCreateCommand to finish
+      (this sets up the Conan compiler profile automatically)
 
-Or manually:
-  ./build/drone_mapper [<input_output_files_path>]
+Step 2 — Build
+  Inside the container terminal:
+    make rebuild
 
-If no path is given, the current working directory is used.
+  This installs mp-units via Conan, configures CMake, and compiles.
+  The binary is placed at: build/drone_mapper
+
+Step 3 — Run
+  ./build/drone_mapper <path-to-scenario-folder>
+
+  Examples:
+    ./build/drone_mapper ./scenario1
+    ./build/drone_mapper ./scenario2
+    ./build/drone_mapper ./scenario3
+
+  If no path is given, the current working directory is used.
+  Output is written to map_output.txt in the scenario folder.
 
 
 Input File Formats
@@ -89,7 +109,7 @@ Test Scenarios
 --------------
 scenario1/  24x24x16 cm room with a 4x4x10 solid pillar in the centre.
             Interior voxels of the pillar are unreachable by lidar.
-            Expected score: 98.2 / 100
+            Expected score: 98.4 / 100
 
 scenario2/  20x20x20 cm hollow room, no internal obstacles.
             All surfaces are reachable.

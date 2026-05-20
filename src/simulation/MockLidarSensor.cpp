@@ -54,7 +54,7 @@ ScanResults MockLidarSensor::scan(Orientation rel_scan_orientation) const {
 
     for (std::size_t circle = 1; circle < config_.fov_circles; ++circle) {
         const std::size_t beam_count = beams_on_circle(circle);
-        const PhysicalLength radius = static_cast<double>(circle) * config_.circle_spacing / 2.0;
+        const PhysicalLength radius = static_cast<double>(circle) * config_.circle_spacing;
 
         for (std::size_t i = 0; i < beam_count; ++i) {
             const auto theta = (360.0 * static_cast<double>(i) / static_cast<double>(beam_count)) * deg;

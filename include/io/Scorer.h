@@ -11,6 +11,8 @@ namespace drone {
 // FP: cells mapped as Occupied that are NOT in ground truth
 // FN: ground truth cells NOT mapped as Occupied
 double ComputeF1Score(const std::vector<MapCell>& mapped,
-                      const std::vector<MapCell>& groundTruth);
+                      const std::vector<MapCell>& groundTruth,
+                      double resXYCm = 1.0,
+                      double resHCm  = 1.0);
 
 } // namespace drone

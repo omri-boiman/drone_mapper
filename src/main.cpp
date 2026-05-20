@@ -48,6 +48,14 @@ int main(int argc, char* argv[])
         return 1;
     }
 
+    if (missionConfig.outputResXYCm != 1.0 || missionConfig.outputResHCm != 1.0) {
+        std::cerr << "Fatal: unsupported output resolution ("
+                  << missionConfig.outputResXYCm << " cm XY, "
+                  << missionConfig.outputResHCm  << " cm H). "
+                  << "Only 1.0 cm resolution is supported.\n";
+        return 1;
+    }
+
     const drone::ParsedMap parsedMap =
         drone::ParseMapFile(ioPath / "map_input.txt", logger);
     if (!parsedMap.valid) {
@@ -108,7 +116,9 @@ int main(int argc, char* argv[])
     std::cout << "Output written to " << outPath << "\n";
     std::cout << "  Mapped cells: " << cells.size() << "\n";
 
-    const double score = drone::ComputeF1Score(cells, parsedMap.cells);
+    const double score = drone::ComputeF1Score(
+        cells, parsedMap.cells,
+        missionConfig.outputResXYCm, missionConfig.outputResHCm);
     std::cout << std::fixed << std::setprecision(1);
     std::cout << "  Score: " << score << " / 100\n";
 

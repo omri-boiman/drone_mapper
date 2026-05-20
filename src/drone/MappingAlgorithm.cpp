@@ -102,10 +102,10 @@ void MappingAlgorithm::ScanAndUpdate() {
         ? m_config->maxRotate.numerical_value_in(deg)
         : 45.0;
 
-    for (int slice = 0; slice < 16; ++slice) {
+    for (int slice = 0; slice < 32; ++slice) {
         ScanSingleDirection();
-        // Rotate 22.5° (in max-rotate-sized steps)
-        double remaining = 22.5;
+        // Rotate 11.25° (in max-rotate-sized steps)
+        double remaining = 11.25;
         while (remaining > 0.5) {
             double step = std::min(remaining, maxRotateDeg);
             m_drone.Rotate(step * deg);
